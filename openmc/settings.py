@@ -54,7 +54,7 @@ class Settings:
         dictionary may have the following keys, 'weight', 'weight_avg',
         'survival_normalization', 'energy_neutron', 'energy_photon',
         'energy_electron', 'energy_positron', 'time_neutron', 'time_photon',
-        'time_electron', and 'time_positron'. Value for 'weight' should be a
+        'time_electron', 'time_positron', and 'ueg_grid'. Value for 'weight' should be a
         float indicating weight cutoff below which particle undergo Russian
         roulette. Value for 'weight_avg' should be a float indicating weight
         assigned to particles that are not killed after Russian roulette. Value
@@ -306,6 +306,9 @@ class Settings:
     ufs_mesh : openmc.RegularMesh
         Mesh to be used for redistributing source sites via the uniform fission
         site (UFS) method.
+    unionized_energy_grid : bool
+        Indicate whether a unionized energy grid should be constructed and used
+        for cross sections.
     use_decay_photons : bool
         Produce decay photons from neutron reactions instead of prompt
     verbosity : int
@@ -385,6 +388,9 @@ class Settings:
 
         # Iterated Fission Probability
         self._ifp_n_generation = None
+
+        #Unionized Energy Grid
+        self._unionized_energy_grid = None
 
         # Output options
         self._statepoint = {}
@@ -849,6 +855,15 @@ class Settings:
         self._ifp_n_generation = ifp_n_generation
 
     @property
+    def unionized_energy_grid(self) -> bool:
+        return self._unionized_energy_grid
+
+    @unionized_energy_grid.setter
+    def unionized_energy_grid(self, use_ueg: bool):
+        cv.check_type('use unionized energy grid option', use_ueg, bool)
+        self._unionized_energy_grid = use_ueg
+
+    @property
     def tabular_legendre(self) -> dict:
         return self._tabular_legendre
 
@@ -949,6 +964,9 @@ class Settings:
                          'energy_positron']:
                 cv.check_type('energy cutoff', cutoff[key], Real)
                 cv.check_greater_than('energy cutoff', cutoff[key], 0.0)
+            elif key == 'ueg_grid':
+                cv.check_type('ueg grid cutoff', cutoff[key], Real)
+                cv.check_greater_than('ueg grid cutoff', cutoff[key], 0.0)
             else:
                 msg = f'Unable to set cutoff to "{key}" which is unsupported ' \
                       'by OpenMC'
@@ -1493,6 +1511,11 @@ class Settings:
             element = ET.SubElement(root, "ifp_n_generation")
             element.text = str(self._ifp_n_generation)
 
+    def _create_unionized_energy_grid_subelement(self, root):
+        if self._unionized_energy_grid not in [None, False]:
+            element = ET.SubElement(root, "ueg_grid")
+            element.text = str(self._unionized_energy_grid)
+
     def _create_tabular_legendre_subelements(self, root):
         if self.tabular_legendre:
             element = ET.SubElement(root, "tabular_legendre")
@@ -1896,7 +1919,7 @@ class Settings:
             for key in ('energy_neutron', 'energy_photon', 'energy_electron',
                         'energy_positron', 'weight', 'weight_avg', 'time_neutron',
                         'time_photon', 'time_electron', 'time_positron',
-                        'survival_normalization'):
+                        'survival_normalization', 'ueg_grid'):
                 value = get_text(elem, key)
                 if value is not None:
                     if key == 'survival_normalization':
@@ -1938,6 +1961,11 @@ class Settings:
         text = get_text(root, 'ifp_n_generation')
         if text is not None:
             self.ifp_n_generation = int(text)
+
+    def _unionized_energy_grid_from_xml_element(self, root):
+        text = get_text(root, 'ueg_grid')
+        if text is not None:
+            self.unionized_energy_grid = text in ('true', '1')
 
     def _tabular_legendre_from_xml_element(self, root):
         elem = root.find('tabular_legendre')
@@ -2173,6 +2201,7 @@ class Settings:
         self._create_no_reduce_subelement(element)
         self._create_verbosity_subelement(element)
         self._create_ifp_n_generation_subelement(element)
+        self._create_unionized_energy_grid_subelement(element)
         self._create_tabular_legendre_subelements(element)
         self._create_temperature_subelements(element)
         self._create_trace_subelement(element)
@@ -2284,6 +2313,7 @@ class Settings:
         settings._no_reduce_from_xml_element(elem)
         settings._verbosity_from_xml_element(elem)
         settings._ifp_n_generation_from_xml_element(elem)
+        settings._unionized_energy_grid_from_xml_element(elem)
         settings._tabular_legendre_from_xml_element(elem)
         settings._temperature_from_xml_element(elem)
         settings._trace_from_xml_element(elem)
