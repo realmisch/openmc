@@ -54,7 +54,7 @@ class Settings:
         dictionary may have the following keys, 'weight', 'weight_avg',
         'survival_normalization', 'energy_neutron', 'energy_photon',
         'energy_electron', 'energy_positron', 'time_neutron', 'time_photon',
-        'time_electron', 'time_positron', and 'ue_grid'. Value for 'weight' should be a
+        'time_electron', 'time_positron', and 'ueg_grid'. Value for 'weight' should be a
         float indicating weight cutoff below which particle undergo Russian
         roulette. Value for 'weight_avg' should be a float indicating weight
         assigned to particles that are not killed after Russian roulette. Value
@@ -964,7 +964,7 @@ class Settings:
                          'energy_positron']:
                 cv.check_type('energy cutoff', cutoff[key], Real)
                 cv.check_greater_than('energy cutoff', cutoff[key], 0.0)
-            elif key == 'ue_grid':
+            elif key == 'ueg_grid':
                 cv.check_type('ueg grid cutoff', cutoff[key], Real)
                 cv.check_greater_than('ueg grid cutoff', cutoff[key], 0.0)
             else:
@@ -1513,7 +1513,7 @@ class Settings:
 
     def _create_unionized_energy_grid_subelement(self, root):
         if self._unionized_energy_grid not in [None, False]:
-            element = ET.SubElement(root, "ue_grid")
+            element = ET.SubElement(root, "ueg_grid")
             element.text = str(self._unionized_energy_grid)
 
     def _create_tabular_legendre_subelements(self, root):
@@ -1919,7 +1919,7 @@ class Settings:
             for key in ('energy_neutron', 'energy_photon', 'energy_electron',
                         'energy_positron', 'weight', 'weight_avg', 'time_neutron',
                         'time_photon', 'time_electron', 'time_positron',
-                        'survival_normalization', 'ue_grid'):
+                        'survival_normalization', 'ueg_grid'):
                 value = get_text(elem, key)
                 if value is not None:
                     if key == 'survival_normalization':
@@ -1963,7 +1963,7 @@ class Settings:
             self.ifp_n_generation = int(text)
 
     def _unionized_energy_grid_from_xml_element(self, root):
-        text = get_text(root, 'ue_grid')
+        text = get_text(root, 'ueg_grid')
         if text is not None:
             self.unionized_energy_grid = text in ('true', '1')
 

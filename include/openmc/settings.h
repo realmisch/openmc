@@ -78,7 +78,7 @@ extern bool uniform_source_sampling; //!< sample sources uniformly?
 extern bool ufs_on;                  //!< uniform fission site method on?
 extern bool urr_ptables_on;          //!< use unresolved resonance prob. tables?
 extern bool use_decay_photons;       //!< use decay photons for D1S
-extern bool ue_grid;                 //!< use unionized energy grid
+extern bool ueg_grid;                 //!< use unionized energy grid
 extern "C" bool weight_windows_on;   //!< are weight windows are enabled?
 extern bool weight_window_checkpoint_surface;   //!< enable weight window check
                                                 //!< upon surface crossing?
@@ -172,7 +172,7 @@ extern int64_t trace_particle; //!< Particle ID to enable trace on
 extern vector<array<int, 3>>
   track_identifiers;               //!< Particle numbers for writing tracks
 extern int trigger_batch_interval; //!< Batch interval for triggers
-extern double ue_grid_cutoff;     //!< Unionized energy grid grid-thinning cutoff
+extern double ueg_grid_cutoff;     //!< Unionized energy grid grid-thinning cutoff
 extern "C" int verbosity;          //!< How verbose to make output
 extern double weight_cutoff;       //!< Weight cutoff for Russian roulette
 extern double weight_survive;      //!< Survival weight after Russian roulette
