@@ -79,7 +79,7 @@ bool uniform_source_sampling {false};
 bool ufs_on {false};
 bool urr_ptables_on {true};
 bool use_decay_photons {false};
-bool ueg_grid {false};
+bool ue_grid {false};
 bool weight_windows_on {false};
 bool weight_window_checkpoint_surface {false};
 bool weight_window_checkpoint_collision {true};
@@ -140,7 +140,7 @@ int trace_gen;
 int64_t trace_particle;
 vector<array<int, 3>> track_identifiers;
 int trigger_batch_interval {1};
-double ueg_grid_cutoff {1.0E-10};
+double ue_grid_cutoff {1.0E-10};
 int verbosity {7};
 double weight_cutoff {0.25};
 double weight_survive {1.0};
@@ -708,11 +708,11 @@ void read_settings_xml(pugi::xml_node root)
     if (check_for_node(node_cutoff, "time_positron")) {
       time_cutoff[3] = std::stod(get_node_value(node_cutoff, "time_positron"));
     }
-    if (check_for_node(node_cutoff, "ueg_grid")) {
-      ueg_grid_cutoff = std::stod(get_node_value(node_cutoff, "ueg_grid"));
-      if (ueg_grid_cutoff <= 0.0) {
+    if (check_for_node(node_cutoff, "ue_grid")) {
+      ue_grid_cutoff = std::stod(get_node_value(node_cutoff, "ue_grid"));
+      if (ue_grid_cutoff <= 0.0) {
         fatal_error(
-          "'ueg_grid_cutoff' must be greater than 0."
+          "'ue_grid_cutoff' must be greater than 0."
         )
       }
     }
@@ -1040,8 +1040,8 @@ void read_settings_xml(pugi::xml_node root)
     }
   }
 
-  if (check_for_node(root, "unionized_energy_grid")) {
-    ueg_grid = get_node_value_bool(root, "unionized_energy_grid");
+  if (check_for_node(root, "ue_grid")) {
+    ue_grid = get_node_value_bool(root, "ue_grid");
   }
 
   // Get volume calculations
