@@ -8,9 +8,12 @@
 #include "openmc/memory.h"
 #include "openmc/vector.h"
 
+#include "xtensor/xtensor.hpp"
+#include "xtensor/xview.hpp"
 #include "xtensor/xmath.hpp"
 #include "xtensor/xadapt.hpp"
 #include "xtensor/xbuilder.hpp"
+#include "xtensor/xnoalias.hpp"
 
 namespace openmc {
   namespace data {
@@ -93,9 +96,14 @@ std::shared_ptr<Nuclide::EnergyGrid> union_e_grid;
         auto & energy = grid[t].energy;
         array<size_t, 2> new_shape {ueg.energy.size(), 5};
         xs[t].resize(new_shape);
-    
-        auto temp_xs = xt::interp(xt::adapt(ueg.energy), xt::adapt(grid[t].energy), xs[t]);
-        std::copy(temp_xs.begin(), temp_xs.end(), xs[t].begin());
+
+        auto ep = xt::adapt(grid[t].energy);
+        auto e = xt::adapt(ueg.energy);
+        for (std::size_t k = 0; k < 5; k++) {
+          auto fp = xt::view(xs[t], xt::all(), k);
+          auto yk = xt::interp(e, ep, fp);
+          xt::noalias(xt::view(xs[t], xt::all(), k)) = yk;
+      }
         grid[t] = ueg;
         //majorant = xt::maximum(xs[t], majorant);
     }
