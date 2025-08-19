@@ -11,19 +11,13 @@
 #include "openmc/nuclide.h"
 
 namespace openmc {
-  struct UnionEnergyGrid {
-    // init method
-    void init();
-    // data members
-    std::vector<int> grid_index;
-    std::vector<double> energy;
-
-  };
-
   namespace data {
-    extern std::unique_ptr<UnionEnergyGrid> union_e_grid;
+    extern std::shared_ptr<Nuclide::EnergyGrid> union_e_grid;
   }
 
+  void create_union_energy_grid();
+  void thin_union_energy_grid();
+  void create_union_energy_xs();
 } // namespace openmc
 
 #endif // OPENMC_UEG_H

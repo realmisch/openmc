@@ -713,7 +713,7 @@ void read_settings_xml(pugi::xml_node root)
       if (ue_grid_cutoff <= 0.0) {
         fatal_error(
           "'ue_grid_cutoff' must be greater than 0."
-        )
+        );
       }
     }
   }

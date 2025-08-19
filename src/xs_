@@ -1,0 +1,9 @@
+cross_sections.cpp:      std::cout << "E Grid Size : " << nuclide->grid_[0].energy.size() << std::endl;
+cross_sections.cpp:      std::cout << "XS Grid Size : " << nuclide->xs_[0].size() << std::endl; 
+ueg.cpp:      for (int t = 0; t < nuclide->kTs_.size(); t++) {
+ueg.cpp:         vector<double>& energies = nuclide->grid_[t].energy;
+ueg.cpp:         if (nuclide->urr_present_) {
+ueg.cpp:          const auto& urr_energies = nuclide->urr_data_[t].energy_;
+ueg.cpp:      auto & xs = nuclide->xs_;
+ueg.cpp:      auto & grid = nuclide->grid_;
+ueg.cpp:    for (int t = 0; t < nuclide->kTs_.size(); t++) {

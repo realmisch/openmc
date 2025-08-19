@@ -106,3 +106,5 @@ CMakeSettings.json
 
 # Python pickle files
 *.pkl
+/release
+pyproject.toml
