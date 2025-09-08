@@ -14,6 +14,7 @@
 #include "openmc/simulation.h"
 #include "openmc/string_utils.h"
 #include "openmc/thermal.h"
+#include "openmc/ueg.h"
 
 #include <fmt/core.h>
 
@@ -348,7 +349,8 @@ Nuclide::Nuclide(hid_t group, const vector<double>& temperature)
     close_group(fer_group);
   }
 
-  this->create_derived(prompt_photons_.get(), delayed_photons_.get());
+  if (!settings::ue_grid)
+    this->create_derived(prompt_photons_.get(), delayed_photons_.get());
 }
 
 Nuclide::~Nuclide()
@@ -497,6 +499,12 @@ void Nuclide::create_derived(
       }
     }
   }
+}
+
+void Nuclide::create_ue_derived(
+  const Function1D* prompt_photons, const Function1D* delayed_photons) 
+{
+  this->create_derived(prompt_photons, delayed_photons);
 }
 
 void Nuclide::init_grid()
@@ -830,6 +838,140 @@ void Nuclide::calculate_xs(
   // If the particle is in the unresolved resonance range and there are
   // probability tables, we need to determine cross sections from the table
   if (settings::urr_ptables_on && urr_present_ && !use_mp) {
+    if (urr_data_[micro.index_temp].energy_in_bounds(p.E()))
+      this->calculate_urr_xs(micro.index_temp, p);
+  }
+
+  micro.last_E = p.E();
+  micro.last_sqrtkT = p.sqrtkT();
+}
+
+void Nuclide::calculate_ue_xs(
+  int i_sab, double sab_frac, int i_grid, double f, Particle& p) 
+{
+  auto& micro {p.neutron_xs(index_)};
+  micro.elastic = CACHE_INVALID;
+  micro.thermal = 0.0;
+  micro.thermal_elastic = 0.0;
+
+  double kT = p.sqrtkT() * p.sqrtkT();
+  double f_temp;
+  int i_temp = -1;
+  switch (settings::temperature_method) {
+  case TemperatureMethod::NEAREST: {
+    double max_diff = INFTY;
+    for (int t = 0; t < kTs_.size(); ++t) {
+      double diff = std::abs(kTs_[t] - kT);
+      if (diff < max_diff) {
+        i_temp = t;
+        max_diff = diff;
+      }
+    }
+  } break;
+
+  case TemperatureMethod::INTERPOLATION:
+    // If current kT outside of the bounds of available, snap to the bound
+    if (kT < kTs_.front()) {
+      i_temp = 0;
+      break;
+    }
+    if (kT > kTs_.back()) {
+      i_temp = kTs_.size() - 1;
+      break;
+    }
+
+    // Find temperatures that bound the actual temperature
+    for (i_temp = 0; i_temp < kTs_.size() - 1; ++i_temp) {
+      if (kTs_[i_temp] <= kT && kT < kTs_[i_temp + 1])
+        break;
+    }
+
+    // Randomly sample between temperature i and i+1
+    f_temp = (kT - kTs_[i_temp]) / (kTs_[i_temp + 1] - kTs_[i_temp]);
+    if (f_temp > prn(p.current_seed()))
+      ++i_temp;
+    break;
+  }
+
+  const auto& xs {xs_[i_temp]};
+
+  micro.index_temp = i_temp;
+  micro.index_grid = i_grid;
+  micro.interp_factor = f;
+
+  micro.total = 
+    (1.0 - f) * xs(i_grid, XS_TOTAL) + f * xs(i_grid + 1, XS_TOTAL);
+  micro.absorption = 
+    (1.0 - f) * xs(i_grid, XS_ABSORPTION) + f * xs(i_grid + 1, XS_ABSORPTION);
+  if (fissionable_) {
+    micro.fission =
+      (1.0 - f) * xs(i_grid, XS_FISSION) + f * xs(i_grid + 1, XS_FISSION);
+    micro.nu_fission = (1.0 - f) * xs(i_grid, XS_NU_FISSION) + 
+                       f * xs(i_grid + 1, XS_NU_FISSION); 
+  } else {
+    micro.fission = 0.0;
+    micro.nu_fission = 0.0;
+  }
+
+  // Calculate microscopic nuclide photon production cross section
+  micro.photon_prod = (1.0 - f) * xs(i_grid, XS_PHOTON_PROD) +
+                        f * xs(i_grid + 1, XS_PHOTON_PROD);
+
+  // Depletion-related reactions
+  if (simulation::need_depletion_rx) {
+    // Initialize all reaction cross sections to zero
+    for (double& xs_i : micro.reaction) {
+      xs_i = 0.0;
+    }
+
+    for (int j = 0; j < DEPLETION_RX.size(); ++j) {
+      // If reaction is present and energy is greater than threshold, set
+      // the reaction xs appropriately
+      int i_rx = reaction_index_[DEPLETION_RX[j]];
+      if (i_rx >= 0) {
+        const auto& rx = reactions_[i_rx];
+        const auto& rx_xs = rx->xs_[i_temp].value;
+
+        // Physics says that (n,gamma) is not a threshold reaction, so we
+        // don't need to specifically check its threshold index
+        if (j == 0) {
+          micro.reaction[0] =
+            (1.0 - f) * rx_xs[i_grid] + f * rx_xs[i_grid + 1];
+          continue;
+        }
+
+        int threshold = rx->xs_[i_temp].threshold;
+        if (i_grid >= threshold) {
+          micro.reaction[j] = (1.0 - f) * rx_xs[i_grid - threshold] +
+                              f * rx_xs[i_grid - threshold + 1];
+        } else if (j >= 3) {
+          // One can show that the the threshold for (n,(x+1)n) is always
+          // higher than the threshold for (n,xn). Thus, if we are below
+          // the threshold for, e.g., (n,2n), there is no reason to check
+          // the threshold for (n,3n) and (n,4n).
+          break;
+        }
+      }
+    }
+  }
+
+  // Initialize sab treatment to false
+  micro.index_sab = C_NONE;
+  micro.sab_frac = 0.0;
+
+  // Initialize URR probability table treatment to false
+  micro.use_ptable = false;
+
+  // If there is S(a,b) data for this nuclide, we need to set the
+  // sab_scatter and sab_elastic cross sections and correct the total and
+  // elastic cross sections.
+
+  if (i_sab >= 0)
+    this->calculate_sab_xs(i_sab, sab_frac, p);
+
+  // If the particle is in the unresolved resonance range and there are
+  // probability tables, we need to determine cross sections from the table
+  if (settings::urr_ptables_on && urr_present_) {
     if (urr_data_[micro.index_temp].energy_in_bounds(p.E()))
       this->calculate_urr_xs(micro.index_temp, p);
   }

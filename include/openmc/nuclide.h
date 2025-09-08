@@ -56,6 +56,9 @@ public:
   //! \param[in,out] p  Particle object
   void calculate_xs(int i_sab, int i_log_union, double sab_frac, Particle& p);
 
+  void calculate_ue_xs(int i_sab, double sab_frac, int i_grid, 
+    double f, Particle& p);
+
   //! Calculate thermal scattering cross section
   //
   //! \param[in] i_sab  Index in data::thermal_scatt
@@ -83,6 +86,9 @@ public:
   //! \return Reaction rate
   double collapse_rate(int MT, double temperature, span<const double> energy,
     span<const double> flux) const;
+
+  void create_ue_derived(
+    const Function1D* prompt_photons, const Function1D* delayed_photons);
 
   //============================================================================
   // Data members

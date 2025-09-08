@@ -845,6 +845,9 @@ void Material::calculate_neutron_xs(Particle& p) const
     ncrystal_xs = ncrystal_mat_.xs(p);
   }
 
+  int ue_i_grid = -1;
+  double ue_f = 0.0;
+
   // Add contribution from each nuclide in material
   for (int i = 0; i < nuclide_.size(); ++i) {
     // ======================================================================
@@ -883,8 +886,17 @@ void Material::calculate_neutron_xs(Particle& p) const
     int i_nuclide = nuclide_[i];
 
     // Update microscopic cross section for this nuclide
-    p.update_neutron_xs(i_nuclide, i_grid, i_sab, sab_frac, ncrystal_xs);
+    if (ue_i_grid >= 0) {
+      p.update_neutron_ue_xs(i_nuclide, ue_i_grid, ue_f, i_sab, sab_frac, ncrystal_xs);
+    } else {
+      p.update_neutron_xs(i_nuclide, i_grid, i_sab, sab_frac, ncrystal_xs);
+    }
     auto& micro = p.neutron_xs(i_nuclide);
+  
+    if (settings::ue_grid && ue_i_grid < 0) {
+      ue_i_grid = micro.index_grid;
+      ue_f = micro.interp_factor;
+    }
 
     // ======================================================================
     // ADD TO MACROSCOPIC CROSS SECTION
