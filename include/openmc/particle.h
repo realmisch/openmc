@@ -120,6 +120,9 @@ public:
   //! \param[in] ncrystal_xs Thermal scattering xs from NCrystal
   void update_neutron_xs(int i_nuclide, int i_grid = C_NONE, int i_sab = C_NONE,
     double sab_frac = 0.0, double ncrystal_xs = -1.0);
+  
+  void update_neutron_ue_xs(int i_nuclide, int i_grid, double f,
+    int i_sab, double sab_frac, double ncrystal_xs);
 };
 
 //============================================================================
