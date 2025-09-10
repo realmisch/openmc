@@ -17,7 +17,6 @@
 #include "openmc/string_utils.h"
 #include "openmc/thermal.h"
 #include "openmc/timer.h"
-#include "openmc/ueg.h"
 #include "openmc/wmp.h"
 #include "openmc/xml_interface.h"
 
@@ -351,15 +350,6 @@ void finalize_cross_sections()
       mark_fissionable_mgxs_materials();
     }
 
-    if (settings::ue_grid) {
-      create_union_energy_grid();
-    }
-
-    for (const auto & nuclide : data::nuclides) {
-      std::cout << "XS : " << nuclide->xs_[0][3] << std::endl;
-      std::cout << "E Grid Size : " << nuclide->grid_[0].energy.size() << std::endl;
-      std::cout << "XS Grid Size : " << nuclide->xs_[0].size() << std::endl; 
-    }
     simulation::time_read_xs.stop();
   }
 

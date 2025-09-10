@@ -25,6 +25,7 @@
 #include "openmc/tallies/trigger.h"
 #include "openmc/timer.h"
 #include "openmc/track_output.h"
+#include "openmc/ueg.h"
 #include "openmc/weight_windows.h"
 
 #ifdef _OPENMP
@@ -732,6 +733,11 @@ void initialize_data()
   simulation::log_spacing =
     std::log(data::energy_max[neutron] / data::energy_min[neutron]) /
     settings::n_log_bins;
+
+  if (settings::ue_grid) {
+    create_union_energy_grid();
+  }
+
 }
 
 #ifdef OPENMC_MPI

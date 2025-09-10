@@ -504,6 +504,7 @@ int sample_nuclide(Particle& p)
       return i_nuclide;
   }
 
+  write_message("Prob : {} || Cutoff : {} || Total XS : {}", prob, cutoff, p.macro_xs().total);
   // If we reach here, no nuclide was sampled
   p.write_restart();
   throw std::runtime_error {"Did not sample any nuclide during collision."};

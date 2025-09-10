@@ -72,6 +72,8 @@ namespace openmc {
     std::sort(ueg.begin(), ueg.end());
     ueg.erase(std::unique(ueg.begin(), ueg.end()), ueg.end());
 
+    write_message("Bin 0 : {} || E_min : {}", ueg[0], E_min);
+
     //Generate logarithmic bin indices for double indexing
     //Identical algorithm to Nuclide::init_grid
     int M = settings::n_log_bins;
@@ -120,9 +122,30 @@ namespace openmc {
     //xt::dump_npy("orig_xs.npy", data::nuclides[0]->xs_[0]);
     //Iterate through all nuclides to update XS
     for (auto & nuclide : data::nuclides) {
+      //std::cout << " Processing " << nuclide->name_ << std::endl;
       write_message("Processing {}", nuclide->name_);
       auto & grid = nuclide->grid_;
-      //Iterate through all nuclide reactions
+      //Interpolate XS for each nuclide temperature and cached reaction
+      /*
+      for (int t = 0; t < nuclide->kTs_.size(); t++) {
+        auto ep = xt::adapt(grid[t].energy);
+        auto interp_xs = xt::full_like(xs[t], 0.0);
+        
+        array<size_t, 2> new_shape {ueg.energy.size(), 5};
+        interp_xs.resize(new_shape);
+        
+        //Loop through each reaction stored in Nuclide.xs_[t]
+        for (int k = 0; k < 5; k++) {
+          auto xsp = xt::view(xs[t], xt::all(), k);
+          auto nuc_xs = xt::interp(e, ep, xsp);
+          xt::view(interp_xs, xt::all(), k) = nuc_xs;
+        }
+        xs[t] = interp_xs;
+        grid[t] = ueg;
+        //majorant = xt::maximum(xs[t], majorant);
+      }
+      */
+      //Iterate through all nuclide reactions not stored in Nuclide.xs_
       for (auto& rxn : nuclide->reactions_) {
         for (int t = 0; t < nuclide->kTs_.size(); t++) {
           auto & xs = rxn->xs_[t];

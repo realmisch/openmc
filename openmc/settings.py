@@ -4,6 +4,7 @@ import itertools
 from math import ceil
 from numbers import Integral, Real
 from pathlib import Path
+import warnings
 
 import lxml.etree as ET
 
@@ -967,6 +968,9 @@ class Settings:
             elif key == 'ue_grid':
                 cv.check_type('ueg grid cutoff', cutoff[key], Real)
                 cv.check_greater_than('ueg grid cutoff', cutoff[key], 0.0)
+                if cutoff[key] > 1.0E-5:
+                    warnings.warn(f'The Unionized Energy Grid cutoff is set to {cutoff[key]:.2E}. ' \
+                            'Cutoffs above 1.0E-5 may bias results.')
             else:
                 msg = f'Unable to set cutoff to "{key}" which is unsupported ' \
                       'by OpenMC'
