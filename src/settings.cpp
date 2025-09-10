@@ -1030,7 +1030,7 @@ void read_settings_xml(pugi::xml_node root)
 
   if (check_for_node(root, "ue_grid")) {
     ue_grid = get_node_value_bool(root, "ue_grid");
-    if (ue_grid && run_CE) {
+    if (ue_grid && !run_CE) {
       fatal_error("Unionized energy grid must be used with "
                   "continuous energy cross sections.");
     }

@@ -855,12 +855,14 @@ void Particle::update_neutron_xs(
       data::nuclides[i_nuclide]->calculate_elastic_xs(*this);
       ncrystal_update_micro(ncrystal_xs, micro);
     }
+
+    if (settings::ue_grid) {
+      write_message("Micro index : {}", micro.index_grid);
+      this->ue_i_grid() = micro.index_grid;
+      this->ue_f() = micro.interp_factor;
+    }
   }
 
-  if (settings::ue_grid) {
-    ue_i_grid() = micro.index_grid;
-    ue_f() = micro.interp_factor;
-  }
 }
 
 void Particle::update_neutron_ue_xs(
@@ -868,7 +870,7 @@ void Particle::update_neutron_ue_xs(
 {
   auto& micro = this->neutron_xs(i_nuclide);
   
-  if (this->sqrtkT() != micro.last_sqrtkT ||
+  if (this->E() != micro.last_E || this->sqrtkT() != micro.last_sqrtkT ||
       i_sab != micro.index_sab || sab_frac != micro.sab_frac) {
     data::nuclides[i_nuclide]->calculate_ue_xs(i_sab, sab_frac, *this);
     

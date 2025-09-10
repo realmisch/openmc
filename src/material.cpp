@@ -883,7 +883,7 @@ void Material::calculate_neutron_xs(Particle& p) const
     int i_nuclide = nuclide_[i];
 
     // Update microscopic cross section for this nuclide
-    if (p.ue_i_grid >= 0) {
+    if (p.ue_i_grid() >= 0) {
       p.update_neutron_ue_xs(i_nuclide, i_sab, sab_frac, ncrystal_xs);
     } else {
       p.update_neutron_xs(i_nuclide, i_grid, i_sab, sab_frac, ncrystal_xs);
