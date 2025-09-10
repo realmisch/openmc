@@ -499,6 +499,10 @@ private:
 
   // Iterated Fission Probability
   double lifetime_ {0.0}; //!< neutron lifetime [s]
+  
+  //UEG
+  int ue_i_grid_ {-1};
+  double ue_f_ {0.0};
 
   int n_collision_ {0};
 
@@ -613,6 +617,12 @@ public:
   // Particle lifetime
   double& lifetime() { return lifetime_; }
   const double& lifetime() const { return lifetime_; }
+
+  //Particle UEG cross section factors
+  int& ue_i_grid() { return ue_i_grid_; }
+  const int& ue_i_grid() const { return ue_i_grid_; }
+  double& ue_f() { return ue_f_; }
+  const double& ue_f() const { return ue_f_; } 
 
   // What event took place, described in greater detail below
   TallyEvent& event() { return event_; }

@@ -856,26 +856,27 @@ void Particle::update_neutron_xs(
       ncrystal_update_micro(ncrystal_xs, micro);
     }
   }
-  if (this->macro_xs().total < 0)
-    write_message("Last Nuclide : {} || E : {} || E_low : {} || E_high : {}", data::nuclides[i_nuclide]->name_, this->E(), data::union_e_grid->energy[micro.index_grid],data::union_e_grid->energy[micro.index_grid + 1]);
+
+  if (settings::ue_grid) {
+    ue_i_grid() = micro.index_grid;
+    ue_f() = micro.interp_factor;
+  }
 }
 
 void Particle::update_neutron_ue_xs(
-  int i_nuclide, int i_grid, double f, int i_sab, double sab_frac, double ncrystal_xs)
+  int i_nuclide, int i_sab, double sab_frac, double ncrystal_xs)
 {
   auto& micro = this->neutron_xs(i_nuclide);
   
-  if (this->E() != micro.last_E || this->sqrtkT() != micro.last_sqrtkT ||
+  if (this->sqrtkT() != micro.last_sqrtkT ||
       i_sab != micro.index_sab || sab_frac != micro.sab_frac) {
-    data::nuclides[i_nuclide]->calculate_ue_xs(i_sab, sab_frac, i_grid, f, *this);
+    data::nuclides[i_nuclide]->calculate_ue_xs(i_sab, sab_frac, *this);
     
     if (ncrystal_xs >= 0.0) {
       data::nuclides[i_nuclide]->calculate_elastic_xs(*this);
       ncrystal_update_micro(ncrystal_xs, micro);
     }
   }
-  if (this->macro_xs().total < 0)
-    write_message("Last Nuclide : {} || E : {} || E_low : {} || E_high : {}", data::nuclides[i_nuclide]->name_, this->E(), data::union_e_grid->energy[micro.index_grid],data::union_e_grid->energy[micro.index_grid + 1]);
 }
 
 //==============================================================================

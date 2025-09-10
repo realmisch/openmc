@@ -966,8 +966,8 @@ class Settings:
                 cv.check_type('energy cutoff', cutoff[key], Real)
                 cv.check_greater_than('energy cutoff', cutoff[key], 0.0)
             elif key == 'ue_grid':
-                cv.check_type('ueg grid cutoff', cutoff[key], Real)
-                cv.check_greater_than('ueg grid cutoff', cutoff[key], 0.0)
+                cv.check_type('union energy grid cutoff', cutoff[key], Real)
+                cv.check_greater_than('union energy grid cutoff', cutoff[key], 0.0)
                 if cutoff[key] > 1.0E-5:
                     warnings.warn(f'The Unionized Energy Grid cutoff is set to {cutoff[key]:.2E}. ' \
                             'Cutoffs above 1.0E-5 may bias results.')

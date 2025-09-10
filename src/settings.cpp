@@ -1030,6 +1030,10 @@ void read_settings_xml(pugi::xml_node root)
 
   if (check_for_node(root, "ue_grid")) {
     ue_grid = get_node_value_bool(root, "ue_grid");
+    if (ue_grid && run_CE) {
+      fatal_error("Unionized energy grid must be used with "
+                  "continuous energy cross sections.");
+    }
   }
 
   // Get volume calculations
@@ -1063,6 +1067,9 @@ void read_settings_xml(pugi::xml_node root)
     if (temperature_multipole && photon_transport) {
       fatal_error("Multipole data cannot currently be used in conjunction with "
                   "photon transport.");
+    }
+    if (temperature_multipole && ue_grid) {
+      fatal_error("Multipole data cannot be used with a unionized energy grid");
     }
   }
   if (check_for_node(root, "temperature_range")) {

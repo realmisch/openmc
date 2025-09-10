@@ -847,7 +847,7 @@ void Nuclide::calculate_xs(
 }
 
 void Nuclide::calculate_ue_xs(
-  int i_sab, double sab_frac, int i_grid, double f, Particle& p) 
+  int i_sab, double sab_frac, Particle& p) 
 {
   auto& micro {p.neutron_xs(index_)};
   micro.elastic = CACHE_INVALID;
@@ -894,6 +894,9 @@ void Nuclide::calculate_ue_xs(
   }
 
   const auto& xs {xs_[i_temp]};
+
+  int i_grid = p.ue_i_grid();
+  double f = p.ue_f();
 
   micro.index_temp = i_temp;
   micro.index_grid = i_grid;

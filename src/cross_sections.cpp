@@ -246,7 +246,6 @@ void read_ce_cross_sections(const vector<vector<double>>& nuc_temps,
         already_read.insert(name);
       }
     } // thermal_tables_
-  
 
     // Finish setting up materials (normalizing densities, etc.)
     mat->finalize();
@@ -279,7 +278,6 @@ void read_ce_cross_sections(const vector<vector<double>>& nuc_temps,
               "present in your cross_sections.xml file.");
     }
   }
-
 }
 
 void read_ce_cross_sections_xml()
@@ -349,11 +347,8 @@ void finalize_cross_sections()
       data::mg.init();
       mark_fissionable_mgxs_materials();
     }
-
     simulation::time_read_xs.stop();
   }
-
-
 }
 
 void library_clear()

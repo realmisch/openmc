@@ -150,6 +150,8 @@ void sample_neutron_reaction(Particle& p)
   // Advance URR seed stream 'N' times after energy changes
   if (p.E() != p.E_last()) {
     advance_prn_seed(data::nuclides.size(), &p.seeds(STREAM_URR_PTABLE));
+    if (settings::ue_grid)
+      p.ue_i_grid() = -1;
   }
 
   // Play russian roulette if survival biasing is turned on
@@ -504,7 +506,6 @@ int sample_nuclide(Particle& p)
       return i_nuclide;
   }
 
-  write_message("Prob : {} || Cutoff : {} || Total XS : {}", prob, cutoff, p.macro_xs().total);
   // If we reach here, no nuclide was sampled
   p.write_restart();
   throw std::runtime_error {"Did not sample any nuclide during collision."};

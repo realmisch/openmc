@@ -56,8 +56,7 @@ public:
   //! \param[in,out] p  Particle object
   void calculate_xs(int i_sab, int i_log_union, double sab_frac, Particle& p);
 
-  void calculate_ue_xs(int i_sab, double sab_frac, int i_grid, 
-    double f, Particle& p);
+  void calculate_ue_xs(int i_sab, double sab_frac, Particle& p);
 
   //! Calculate thermal scattering cross section
   //
