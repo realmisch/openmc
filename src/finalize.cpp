@@ -92,6 +92,7 @@ int openmc_finalize()
   settings::max_lost_particles = 10;
   settings::max_order = 0;
   settings::max_particles_in_flight = 100000;
+  settings::max_secondaries = 10000;
   settings::max_particle_events = 1'000'000;
   settings::max_history_splits = 10'000'000;
   settings::max_tracks = 1000;
@@ -166,7 +167,7 @@ int openmc_finalize()
   // Deallocate arrays
   free_memory();
 
-#ifdef LIBMESH
+#ifdef OPENMC_LIBMESH_ENABLED
   settings::libmesh_init.reset();
 #endif
 
@@ -185,7 +186,6 @@ int openmc_finalize()
 int openmc_reset()
 {
 
-  model::universe_cell_counts.clear();
   model::universe_level_counts.clear();
 
   for (auto& t : model::tallies) {

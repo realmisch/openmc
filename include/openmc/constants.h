@@ -28,11 +28,11 @@ constexpr int HDF5_VERSION[] {3, 0};
 constexpr array<int, 2> VERSION_STATEPOINT {18, 1};
 constexpr array<int, 2> VERSION_PARTICLE_RESTART {2, 0};
 constexpr array<int, 2> VERSION_TRACK {3, 0};
-constexpr array<int, 2> VERSION_SUMMARY {6, 0};
+constexpr array<int, 2> VERSION_SUMMARY {6, 1};
 constexpr array<int, 2> VERSION_VOLUME {1, 0};
 constexpr array<int, 2> VERSION_VOXEL {2, 0};
 constexpr array<int, 2> VERSION_MGXS_LIBRARY {1, 0};
-constexpr array<int, 2> VERSION_PROPERTIES {1, 0};
+constexpr array<int, 2> VERSION_PROPERTIES {1, 1};
 constexpr array<int, 2> VERSION_WEIGHT_WINDOWS {1, 0};
 
 // ============================================================================
@@ -62,6 +62,11 @@ constexpr int MAX_SAMPLE {100000};
 // Avg. number of hits per batch to be defined as a "small"
 // source region in the random ray solver
 constexpr double MIN_HITS_PER_BATCH {1.5};
+
+// The minimum flux value to be considered non-zero when computing adjoint
+// sources. Positive values below this cutoff will be treated as zero, so as to
+// prevent extremely large adjoint source terms from being generated.
+constexpr double ZERO_FLUX_CUTOFF {1e-22};
 
 // ============================================================================
 // MATH AND PHYSICAL CONSTANTS

@@ -38,7 +38,7 @@
 #include "openmc/vector.h"
 #include "openmc/weight_windows.h"
 
-#ifdef LIBMESH
+#ifdef OPENMC_LIBMESH_ENABLED
 #include "libmesh/libmesh.h"
 #endif
 
@@ -64,7 +64,7 @@ int openmc_init(int argc, char* argv[], const void* intracomm)
   if (err)
     return err;
 
-#ifdef LIBMESH
+#ifdef OPENMC_LIBMESH_ENABLED
   const int n_threads = num_threads();
   // initialize libMesh if it hasn't been initialized already
   // (if initialized externally, the libmesh_init object needs to be provided
@@ -401,6 +401,10 @@ bool read_model_xml()
   // Finalize cross sections having assigned temperatures
   finalize_cross_sections();
 
+  // Compute cell density multipliers now that material densities
+  // have been finalized (from geometry_aux.h)
+  finalize_cell_densities();
+
   if (check_for_node(root, "tallies"))
     read_tallies_xml(root.child("tallies"));
 
@@ -441,6 +445,11 @@ void read_separate_xml_files()
 
   // Finalize cross sections having assigned temperatures
   finalize_cross_sections();
+
+  // Compute cell density multipliers now that material densities
+  // have been finalized (from geometry_aux.h)
+  finalize_cell_densities();
+
   read_tallies_xml();
 
   // Initialize distribcell_filters

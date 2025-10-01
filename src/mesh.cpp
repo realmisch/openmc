@@ -47,13 +47,13 @@
 #include "openmc/volume_calc.h"
 #include "openmc/xml_interface.h"
 
-#ifdef LIBMESH
+#ifdef OPENMC_LIBMESH_ENABLED
 #include "libmesh/mesh_modification.h"
 #include "libmesh/mesh_tools.h"
 #include "libmesh/numeric_vector.h"
 #endif
 
-#ifdef DAGMC
+#ifdef OPENMC_DAGMC_ENABLED
 #include "moab/FileOptions.hpp"
 #endif
 
@@ -63,7 +63,7 @@ namespace openmc {
 // Global variables
 //==============================================================================
 
-#ifdef LIBMESH
+#ifdef OPENMC_LIBMESH_ENABLED
 const bool LIBMESH_ENABLED = true;
 #else
 const bool LIBMESH_ENABLED = false;
@@ -80,7 +80,7 @@ vector<unique_ptr<Mesh>> meshes;
 
 } // namespace model
 
-#ifdef LIBMESH
+#ifdef OPENMC_LIBMESH_ENABLED
 namespace settings {
 unique_ptr<libMesh::LibMeshInit> libmesh_init;
 const libMesh::Parallel::Communicator* libmesh_comm {nullptr};
@@ -368,11 +368,11 @@ void Mesh::material_volumes(int nx, int ny, int nz, int table_size,
 
           // Set birth cell attribute
           if (p.cell_born() == C_NONE)
-            p.cell_born() = p.lowest_coord().cell;
+            p.cell_born() = p.lowest_coord().cell();
 
           // Initialize last cells from current cell
           for (int j = 0; j < p.n_coord(); ++j) {
-            p.cell_last(j) = p.coord(j).cell;
+            p.cell_last(j) = p.coord(j).cell();
           }
           p.n_coord_last() = p.n_coord();
 
@@ -385,7 +385,7 @@ void Mesh::material_volumes(int nx, int ny, int nz, int table_size,
             BoundaryInfo boundary = distance_to_boundary(p);
 
             // Advance particle forward
-            double distance = std::min(boundary.distance, max_distance);
+            double distance = std::min(boundary.distance(), max_distance);
             p.move_distance(distance);
 
             // Determine what mesh elements were crossed by particle
@@ -411,17 +411,17 @@ void Mesh::material_volumes(int nx, int ny, int nz, int table_size,
 
             // cross next geometric surface
             for (int j = 0; j < p.n_coord(); ++j) {
-              p.cell_last(j) = p.coord(j).cell;
+              p.cell_last(j) = p.coord(j).cell();
             }
             p.n_coord_last() = p.n_coord();
 
             // Set surface that particle is on and adjust coordinate levels
-            p.surface() = boundary.surface;
-            p.n_coord() = boundary.coord_level;
+            p.surface() = boundary.surface();
+            p.n_coord() = boundary.coord_level();
 
-            if (boundary.lattice_translation[0] != 0 ||
-                boundary.lattice_translation[1] != 0 ||
-                boundary.lattice_translation[2] != 0) {
+            if (boundary.lattice_translation()[0] != 0 ||
+                boundary.lattice_translation()[1] != 0 ||
+                boundary.lattice_translation()[2] != 0) {
               // Particle crosses lattice boundary
               cross_lattice(p, boundary);
             } else {
@@ -590,6 +590,8 @@ Position StructuredMesh::sample_element(
 
 UnstructuredMesh::UnstructuredMesh(pugi::xml_node node) : Mesh(node)
 {
+  n_dimension_ = 3;
+
   // check the mesh type
   if (check_for_node(node, "type")) {
     auto temp = get_node_value(node, "type", true, true);
@@ -2134,14 +2136,14 @@ extern "C" int openmc_add_unstructured_mesh(
   std::string mesh_file(filename);
   bool valid_lib = false;
 
-#ifdef DAGMC
+#ifdef OPENMC_DAGMC_ENABLED
   if (lib_name == MOABMesh::mesh_lib_type) {
     model::meshes.push_back(std::move(make_unique<MOABMesh>(mesh_file)));
     valid_lib = true;
   }
 #endif
 
-#ifdef LIBMESH
+#ifdef OPENMC_LIBMESH_ENABLED
   if (lib_name == LibMesh::mesh_lib_type) {
     model::meshes.push_back(std::move(make_unique<LibMesh>(mesh_file)));
     valid_lib = true;
@@ -2509,7 +2511,7 @@ extern "C" int openmc_spherical_mesh_set_grid(int32_t index,
     index, grid_x, nx, grid_y, ny, grid_z, nz);
 }
 
-#ifdef DAGMC
+#ifdef OPENMC_DAGMC_ENABLED
 
 const std::string MOABMesh::mesh_lib_type = "moab";
 
@@ -2519,7 +2521,9 @@ MOABMesh::MOABMesh(pugi::xml_node node) : UnstructuredMesh(node)
 }
 
 MOABMesh::MOABMesh(const std::string& filename, double length_multiplier)
+  : UnstructuredMesh()
 {
+  n_dimension_ = 3;
   filename_ = filename;
   set_length_multiplier(length_multiplier);
   initialize();
@@ -3211,11 +3215,11 @@ void MOABMesh::write(const std::string& base_filename) const
 
 #endif
 
-#ifdef LIBMESH
+#ifdef OPENMC_LIBMESH_ENABLED
 
 const std::string LibMesh::mesh_lib_type = "libmesh";
 
-LibMesh::LibMesh(pugi::xml_node node) : UnstructuredMesh(node), adaptive_(false)
+LibMesh::LibMesh(pugi::xml_node node) : UnstructuredMesh(node)
 {
   // filename_ and length_multiplier_ will already be set by the
   // UnstructuredMesh constructor
@@ -3226,7 +3230,6 @@ LibMesh::LibMesh(pugi::xml_node node) : UnstructuredMesh(node), adaptive_(false)
 
 // create the mesh from a pointer to a libMesh Mesh
 LibMesh::LibMesh(libMesh::MeshBase& input_mesh, double length_multiplier)
-  : adaptive_(input_mesh.n_active_elem() != input_mesh.n_elem())
 {
   if (!dynamic_cast<libMesh::ReplicatedMesh*>(&input_mesh)) {
     fatal_error("At present LibMesh tallies require a replicated mesh. Please "
@@ -3240,8 +3243,8 @@ LibMesh::LibMesh(libMesh::MeshBase& input_mesh, double length_multiplier)
 
 // create the mesh from an input file
 LibMesh::LibMesh(const std::string& filename, double length_multiplier)
-  : adaptive_(false)
 {
+  n_dimension_ = 3;
   set_mesh_pointer_from_filename(filename);
   set_length_multiplier(length_multiplier);
   initialize();
@@ -3302,21 +3305,6 @@ void LibMesh::initialize()
   auto first_elem = *m_->elements_begin();
   first_element_id_ = first_elem->id();
 
-  // if the mesh is adaptive elements aren't guaranteed by libMesh to be
-  // contiguous in ID space, so we need to map from bin indices (defined over
-  // active elements) to global dof ids
-  if (adaptive_) {
-    bin_to_elem_map_.reserve(m_->n_active_elem());
-    elem_to_bin_map_.resize(m_->n_elem(), -1);
-    for (auto it = m_->active_elements_begin(); it != m_->active_elements_end();
-         it++) {
-      auto elem = *it;
-
-      bin_to_elem_map_.push_back(elem->id());
-      elem_to_bin_map_[elem->id()] = bin_to_elem_map_.size() - 1;
-    }
-  }
-
   // bounding box for the mesh for quick rejection checks
   bbox_ = libMesh::MeshTools::create_bounding_box(*m_);
   libMesh::Point ll = bbox_.min();
@@ -3374,7 +3362,7 @@ std::string LibMesh::library() const
 
 int LibMesh::n_bins() const
 {
-  return m_->n_active_elem();
+  return m_->n_elem();
 }
 
 int LibMesh::n_surface_bins() const
@@ -3397,14 +3385,6 @@ int LibMesh::n_surface_bins() const
 
 void LibMesh::add_score(const std::string& var_name)
 {
-  if (adaptive_) {
-    warning(fmt::format(
-      "Exodus output cannot be provided as unstructured mesh {} is adaptive.",
-      this->id_));
-
-    return;
-  }
-
   if (!equation_systems_) {
     build_eqn_sys();
   }
@@ -3440,14 +3420,6 @@ void LibMesh::remove_scores()
 void LibMesh::set_score_data(const std::string& var_name,
   const vector<double>& values, const vector<double>& std_dev)
 {
-  if (adaptive_) {
-    warning(fmt::format(
-      "Exodus output cannot be provided as unstructured mesh {} is adaptive.",
-      this->id_));
-
-    return;
-  }
-
   if (!equation_systems_) {
     build_eqn_sys();
   }
@@ -3491,14 +3463,6 @@ void LibMesh::set_score_data(const std::string& var_name,
 
 void LibMesh::write(const std::string& filename) const
 {
-  if (adaptive_) {
-    warning(fmt::format(
-      "Exodus output cannot be provided as unstructured mesh {} is adaptive.",
-      this->id_));
-
-    return;
-  }
-
   write_message(fmt::format(
     "Writing file: {}.e for unstructured mesh {}", filename, this->id_));
   libMesh::ExodusII_IO exo(*m_);
@@ -3532,8 +3496,7 @@ int LibMesh::get_bin(Position r) const
 
 int LibMesh::get_bin_from_element(const libMesh::Elem* elem) const
 {
-  int bin =
-    adaptive_ ? elem_to_bin_map_[elem->id()] : elem->id() - first_element_id_;
+  int bin = elem->id() - first_element_id_;
   if (bin >= n_bins() || bin < 0) {
     fatal_error(fmt::format("Invalid bin: {}", bin));
   }
@@ -3548,7 +3511,7 @@ std::pair<vector<double>, vector<double>> LibMesh::plot(
 
 const libMesh::Elem& LibMesh::get_element_from_bin(int bin) const
 {
-  return adaptive_ ? m_->elem_ref(bin_to_elem_map_.at(bin)) : m_->elem_ref(bin);
+  return m_->elem_ref(bin);
 }
 
 double LibMesh::volume(int bin) const
@@ -3556,7 +3519,66 @@ double LibMesh::volume(int bin) const
   return this->get_element_from_bin(bin).volume();
 }
 
-#endif // LIBMESH
+AdaptiveLibMesh::AdaptiveLibMesh(
+  libMesh::MeshBase& input_mesh, double length_multiplier)
+  : LibMesh(input_mesh, length_multiplier), num_active_(m_->n_active_elem())
+{
+  // if the mesh is adaptive elements aren't guaranteed by libMesh to be
+  // contiguous in ID space, so we need to map from bin indices (defined over
+  // active elements) to global dof ids
+  bin_to_elem_map_.reserve(num_active_);
+  elem_to_bin_map_.resize(m_->n_elem(), -1);
+  for (auto it = m_->active_elements_begin(); it != m_->active_elements_end();
+       it++) {
+    auto elem = *it;
+
+    bin_to_elem_map_.push_back(elem->id());
+    elem_to_bin_map_[elem->id()] = bin_to_elem_map_.size() - 1;
+  }
+}
+
+int AdaptiveLibMesh::n_bins() const
+{
+  return num_active_;
+}
+
+void AdaptiveLibMesh::add_score(const std::string& var_name)
+{
+  warning(fmt::format(
+    "Exodus output cannot be provided as unstructured mesh {} is adaptive.",
+    this->id_));
+}
+
+void AdaptiveLibMesh::set_score_data(const std::string& var_name,
+  const vector<double>& values, const vector<double>& std_dev)
+{
+  warning(fmt::format(
+    "Exodus output cannot be provided as unstructured mesh {} is adaptive.",
+    this->id_));
+}
+
+void AdaptiveLibMesh::write(const std::string& filename) const
+{
+  warning(fmt::format(
+    "Exodus output cannot be provided as unstructured mesh {} is adaptive.",
+    this->id_));
+}
+
+int AdaptiveLibMesh::get_bin_from_element(const libMesh::Elem* elem) const
+{
+  int bin = elem_to_bin_map_[elem->id()];
+  if (bin >= n_bins() || bin < 0) {
+    fatal_error(fmt::format("Invalid bin: {}", bin));
+  }
+  return bin;
+}
+
+const libMesh::Elem& AdaptiveLibMesh::get_element_from_bin(int bin) const
+{
+  return m_->elem_ref(bin_to_elem_map_.at(bin));
+}
+
+#endif // OPENMC_LIBMESH_ENABLED
 
 //==============================================================================
 // Non-member functions
@@ -3605,12 +3627,12 @@ void read_meshes(pugi::xml_node root)
       model::meshes.push_back(make_unique<CylindricalMesh>(node));
     } else if (mesh_type == SphericalMesh::mesh_type) {
       model::meshes.push_back(make_unique<SphericalMesh>(node));
-#ifdef DAGMC
+#ifdef OPENMC_DAGMC_ENABLED
     } else if (mesh_type == UnstructuredMesh::mesh_type &&
                mesh_lib == MOABMesh::mesh_lib_type) {
       model::meshes.push_back(make_unique<MOABMesh>(node));
 #endif
-#ifdef LIBMESH
+#ifdef OPENMC_LIBMESH_ENABLED
     } else if (mesh_type == UnstructuredMesh::mesh_type &&
                mesh_lib == LibMesh::mesh_lib_type) {
       model::meshes.push_back(make_unique<LibMesh>(node));
