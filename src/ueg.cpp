@@ -26,7 +26,7 @@ namespace openmc {
 
   void create_union_energy_grid() {
     data::union_e_grid = std::make_shared<Nuclide::EnergyGrid>();
-    int neutron = static_cast<int>(ParticleType::neutron);
+    int neutron = ParticleType::neutron().transport_index();
     double E_min = data::energy_min[neutron];
     double E_max = data::energy_max[neutron];
 
