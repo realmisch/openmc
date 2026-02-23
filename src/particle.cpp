@@ -857,7 +857,6 @@ void Particle::update_neutron_xs(
     }
 
     if (settings::ue_grid) {
-      write_message("Micro index : {}", micro.index_grid);
       this->ue_i_grid() = micro.index_grid;
       this->ue_f() = micro.interp_factor;
     }

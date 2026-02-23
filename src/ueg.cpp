@@ -1,6 +1,5 @@
-#include<fstream>
-
 #include<fmt/core.h>
+#include<execution>
 
 #include "openmc/ueg.h"
 #include "openmc/nuclide.h"
@@ -67,9 +66,10 @@ namespace openmc {
 
     ueg.erase(ueg.begin(), min_it + 1);
     ueg.erase(max_it - 1, ueg.end());
-    
+ 
     ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
-    std::sort(ueg.begin(), ueg.end());
+
+    std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
     ueg.erase(std::unique(ueg.begin(), ueg.end()), ueg.end());
 
     //Generate logarithmic bin indices for double indexing
