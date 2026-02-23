@@ -34,7 +34,6 @@ dependencies = [
     "pandas",
     "lxml",
     "uncertainties",
-    "setuptools",
     "endf",
 ]
 
@@ -48,8 +47,15 @@ docs = [
     "sphinxcontrib-svg2pdfconverter",
     "sphinx-rtd-theme"
 ]
-test = ["packaging", "pytest", "pytest-cov", "colorama", "openpyxl"]
-ci = ["cpp-coveralls", "coveralls"]
+test = [
+    "packaging",
+    "pytest",
+    "pytest-cov>=4.0",
+    "pytest-rerunfailures",
+    "colorama",
+    "openpyxl",
+]
+ci = ["coverage>=7.4", "gcovr>=7.2"]
 vtk = ["vtk"]
 
 [project.urls]

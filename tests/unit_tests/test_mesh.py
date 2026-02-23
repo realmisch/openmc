@@ -1,7 +1,10 @@
 from math import pi
 from tempfile import TemporaryDirectory
 from pathlib import Path
+import itertools
+import random
 
+import h5py
 import numpy as np
 from scipy.stats import chi2
 import pytest
@@ -486,6 +489,74 @@ def test_umesh(run_in_tmpdir, simple_umesh, export_type):
     with pytest.raises(ValueError, match='Cannot apply dataset "mean"'):
         simple_umesh.write_data_to_vtk(datasets={'mean': ref_data[:-2]}, filename=filename)
 
+
+@pytest.mark.skipif(not openmc.lib._dagmc_enabled(), reason="DAGMC not enabled.")
+def test_write_vtkhdf(request, run_in_tmpdir):
+    """Performs a minimal UnstructuredMesh simulation, reads in the resulting
+    statepoint file and writes the mesh data to vtk and vtkhdf files. It is
+    necessary to read in the unstructured mesh from a statepoint file to ensure
+    it has all the required attributes
+    """
+    model = openmc.Model()
+
+    surf1 = openmc.Sphere(r=1000.0, boundary_type="vacuum")
+    cell1 = openmc.Cell(region=-surf1)
+    model.geometry = openmc.Geometry([cell1])
+
+    umesh = openmc.UnstructuredMesh(
+        request.path.parent / "test_mesh_dagmc_tets.vtk",
+        "moab",
+        mesh_id = 1
+    )
+    mesh_filter = openmc.MeshFilter(umesh)
+
+    # Create flux mesh tally to score alpha production
+    mesh_tally = openmc.Tally(name="test_tally")
+    mesh_tally.filters = [mesh_filter]
+    mesh_tally.scores = ["flux"]
+
+    model.tallies = [mesh_tally]
+
+    model.settings.run_mode = "fixed source"
+    model.settings.batches = 2
+    model.settings.particles = 10
+
+    statepoint_file = model.run()
+
+    with openmc.StatePoint(statepoint_file) as statepoint:
+        my_tally = statepoint.get_tally(name="test_tally")
+
+    umesh_from_sp = statepoint.meshes[umesh.id]
+
+    datasets={
+        "mean": my_tally.mean.flatten(),
+        "std_dev": my_tally.std_dev.flatten()
+    }
+
+    umesh_from_sp.write_data_to_vtk(datasets=datasets, filename="test_mesh.vtkhdf")
+    umesh_from_sp.write_data_to_vtk(datasets=datasets, filename="test_mesh.vtk")
+
+    with pytest.raises(ValueError, match="Unsupported file extension"):
+        # Supported file extensions are vtk or vtkhdf, not hdf5, so this should raise an error
+        umesh_from_sp.write_data_to_vtk(
+            datasets=datasets,
+            filename="test_mesh.hdf5",
+        )
+    with pytest.raises(ValueError, match="Cannot apply dataset"):
+        # The shape of the data should match the shape of the mesh, so this should raise an error
+        umesh_from_sp.write_data_to_vtk(
+            datasets={'incorrectly_shaped_data': np.array(([1,2,3]))},
+            filename="test_mesh_incorrect_shape.vtkhdf",
+        )
+
+    assert Path("test_mesh.vtk").exists()
+    assert Path("test_mesh.vtkhdf").exists()
+
+    # just ensure we can open the file without error
+    with h5py.File("test_mesh.vtkhdf", "r"):
+        ...
+
+
 def test_mesh_get_homogenized_materials():
     """Test the get_homogenized_materials method"""
     # Simple model with 1 cm of Fe56 next to 1 cm of H1
@@ -622,6 +693,49 @@ def test_mesh_material_volumes_serialize():
     assert new_volumes.by_element(3) == [(2, 1.0)]
 
 
+def test_mesh_material_volumes_serialize_with_bboxes():
+    materials = np.array([
+        [1, -1, -2],
+        [-1, -2, -2],
+        [2, 1, -2],
+        [2, -2, -2]
+    ])
+    volumes = np.array([
+        [0.5, 0.5, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.5, 0.5, 0.0],
+        [1.0, 0.0, 0.0]
+    ])
+
+    # (xmin, ymin, zmin, xmax, ymax, zmax)
+    bboxes = np.empty((4, 3, 6))
+    bboxes[..., 0:3] = np.inf
+    bboxes[..., 3:6] = -np.inf
+    bboxes[0, 0] = [-1.0, -2.0, -3.0, 1.0, 2.0, 3.0]    # material 1
+    bboxes[0, 1] = [-5.0, -6.0, -7.0, 5.0, 6.0, 7.0]    # void
+    bboxes[1, 0] = [0.0, 0.0, 0.0, 10.0, 1.0, 2.0]      # void
+    bboxes[2, 0] = [-1.0, -1.0, -1.0, 0.0, 0.0, 0.0]    # material 2
+    bboxes[2, 1] = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]       # material 1
+    bboxes[3, 0] = [-2.0, -2.0, -2.0, 2.0, 2.0, 2.0]    # material 2
+
+    mmv = openmc.MeshMaterialVolumes(materials, volumes, bboxes)
+    with TemporaryDirectory() as tmpdir:
+        path = f'{tmpdir}/volumes_bboxes.npz'
+        mmv.save(path)
+        loaded = openmc.MeshMaterialVolumes.from_npz(path)
+
+    assert loaded.has_bounding_boxes
+    first = loaded.by_element(0, include_bboxes=True)[0][2]
+    assert isinstance(first, openmc.BoundingBox)
+    np.testing.assert_array_equal(first.lower_left, (-1.0, -2.0, -3.0))
+    np.testing.assert_array_equal(first.upper_right, (1.0, 2.0, 3.0))
+
+    second = loaded.by_element(0, include_bboxes=True)[1][2]
+    assert isinstance(second, openmc.BoundingBox)
+    np.testing.assert_array_equal(second.lower_left, (-5.0, -6.0, -7.0))
+    np.testing.assert_array_equal(second.upper_right, (5.0, 6.0, 7.0))
+
+
 def test_mesh_material_volumes_boundary_conditions(sphere_model):
     """Test the material volumes method using a regular mesh
     that overlaps with a vacuum boundary condition."""
@@ -647,6 +761,53 @@ def test_mesh_material_volumes_boundary_conditions(sphere_model):
     for evaluated, expected in zip(volumes.by_element(0), expected_volumes):
         assert evaluated[0] == expected[0]
         assert evaluated[1] == pytest.approx(expected[1], rel=1e-2)
+
+
+def test_mesh_material_volumes_bounding_boxes():
+    # Create a model with 8 spherical cells at known locations with random radii
+    box = openmc.model.RectangularParallelepiped(
+        -10, 10, -10, 10, -10, 10, boundary_type='vacuum')
+
+    mat = openmc.Material()
+    mat.add_nuclide('H1', 1.0)
+
+    sph_cells = []
+    for x, y, z in itertools.product((-5., 5.), repeat=3):
+        mat_i = mat.clone()
+        sph = openmc.Sphere(x, y, z, r=random.uniform(0.5, 1.5))
+        sph_cells.append(openmc.Cell(region=-sph, fill=mat_i))
+    background = openmc.Cell(region=-box & openmc.Intersection([~c.region for c in sph_cells]))
+
+    model = openmc.Model()
+    model.geometry = openmc.Geometry(sph_cells + [background])
+    model.settings.particles = 1000
+    model.settings.batches = 10
+
+    # Create a one-element mesh that encompasses the entire geometry
+    mesh = openmc.RegularMesh()
+    mesh.lower_left = (-10., -10., -10.)
+    mesh.upper_right = (10., 10., 10.)
+    mesh.dimension = (1, 1, 1)
+
+    # Run material volume calculation with bounding boxes
+    n_samples = (400, 400, 400)
+    mmv = mesh.material_volumes(model, n_samples, max_materials=10, bounding_boxes=True)
+    assert mmv.has_bounding_boxes
+
+    # Create a mapping of material ID to bounding box
+    bbox_by_mat = {
+        mat_id: bbox
+        for mat_id, vol, bbox in mmv.by_element(0, include_bboxes=True)
+        if mat_id is not None and vol > 0.0
+    }
+
+    # Match the mesh ray spacing used for the bounding box estimator.
+    tol = 0.5 * mesh.bounding_box.width[0] / n_samples[0]
+    for cell in sph_cells:
+        bbox = bbox_by_mat[cell.fill.id]
+        cell_bbox = cell.bounding_box
+        np.testing.assert_allclose(bbox.lower_left, cell_bbox.lower_left, atol=tol)
+        np.testing.assert_allclose(bbox.upper_right, cell_bbox.upper_right, atol=tol)
 
 
 def test_raytrace_mesh_infinite_loop(run_in_tmpdir):

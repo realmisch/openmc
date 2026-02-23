@@ -8,6 +8,7 @@
 #include "openmc/bank.h"
 #include "openmc/capi.h"
 #include "openmc/cell.h"
+#include "openmc/collision_track.h"
 #include "openmc/constants.h"
 #include "openmc/dagmc.h"
 #include "openmc/error.h"
@@ -47,18 +48,16 @@ double Particle::speed() const
   if (settings::run_CE) {
     // Determine mass in eV/c^2
     double mass;
-    switch (this->type()) {
-    case ParticleType::neutron:
+    switch (type().pdg_number()) {
+    case PDG_NEUTRON:
       mass = MASS_NEUTRON_EV;
-      break;
-    case ParticleType::photon:
-      mass = 0.0;
-      break;
-    case ParticleType::electron:
-    case ParticleType::positron:
+    case PDG_ELECTRON:
+    case PDG_POSITRON:
       mass = MASS_ELECTRON_EV;
-      break;
+    default:
+      mass = this->type().mass() * AMU_EV;
     }
+
     // Equivalent to C * sqrt(1-(m/(m+E))^2) without problem at E<<m:
     return C_LIGHT * std::sqrt(this->E() * (this->E() + 2 * mass)) /
            (this->E() + mass);
@@ -76,9 +75,16 @@ bool Particle::create_secondary(
 {
   // If energy is below cutoff for this particle, don't create secondary
   // particle
-  if (E < settings::energy_cutoff[static_cast<int>(type)]) {
+  int idx = type.transport_index();
+  if (idx == C_NONE) {
     return false;
   }
+  if (E < settings::energy_cutoff[idx]) {
+    return false;
+  }
+
+  // Increment number of secondaries created (for ParticleProductionFilter)
+  n_secondaries()++;
 
   auto& bank = secondary_bank().emplace_back();
   bank.particle = type;
@@ -121,6 +127,9 @@ void Particle::from_source(const SourceSite* src)
   fission() = false;
   zero_flux_derivs();
   lifetime() = 0.0;
+#ifdef OPENMC_DAGMC_ENABLED
+  history().reset();
+#endif
 
   // Copy attributes from source bank site
   type() = src->particle;
@@ -231,8 +240,9 @@ void Particle::event_advance()
   boundary() = distance_to_boundary(*this);
 
   // Sample a distance to collision
-  if (type() == ParticleType::electron || type() == ParticleType::positron) {
-    collision_distance() = 0.0;
+  if (type() == ParticleType::electron() ||
+      type() == ParticleType::positron()) {
+    collision_distance() = material() == MATERIAL_VOID ? INFINITY : 0.0;
   } else if (macro_xs().total == 0.0) {
     collision_distance() = INFINITY;
   } else {
@@ -240,7 +250,7 @@ void Particle::event_advance()
   }
 
   double speed = this->speed();
-  double time_cutoff = settings::time_cutoff[static_cast<int>(type())];
+  double time_cutoff = settings::time_cutoff[type().transport_index()];
   double distance_cutoff =
     (time_cutoff < INFTY) ? (time_cutoff - time()) * speed : INFTY;
 
@@ -265,8 +275,7 @@ void Particle::event_advance()
   }
 
   // Score track-length estimate of k-eff
-  if (settings::run_mode == RunMode::EIGENVALUE &&
-      type() == ParticleType::neutron) {
+  if (settings::run_mode == RunMode::EIGENVALUE && type().is_neutron()) {
     keff_tally_tracklength() += wgt() * distance * macro_xs().nu_fission;
   }
 
@@ -326,9 +335,9 @@ void Particle::event_cross_surface()
 
 void Particle::event_collide()
 {
+
   // Score collision estimate of keff
-  if (settings::run_mode == RunMode::EIGENVALUE &&
-      type() == ParticleType::neutron) {
+  if (settings::run_mode == RunMode::EIGENVALUE && type().is_neutron()) {
     keff_tally_collision() += wgt() * macro_xs().nu_fission / macro_xs().total;
   }
 
@@ -348,6 +357,11 @@ void Particle::event_collide()
     collision_mg(*this);
   }
 
+  // Collision track feature to recording particle interaction
+  if (settings::collision_track) {
+    collision_track_record(*this);
+  }
+
   // Score collision estimator tallies -- this is done after a collision
   // has occurred rather than before because we need information on the
   // outgoing energy for any tallies with an outgoing energy filter
@@ -361,8 +375,7 @@ void Particle::event_collide()
     }
   }
 
-  if (!model::active_pulse_height_tallies.empty() &&
-      type() == ParticleType::photon) {
+  if (!model::active_pulse_height_tallies.empty() && type().is_photon()) {
     pht_collision_energy();
   }
 
@@ -370,6 +383,11 @@ void Particle::event_collide()
   n_bank() = 0;
   bank_second_E() = 0.0;
   wgt_bank() = 0.0;
+
+  // Clear number of secondaries in this collision. This is
+  // distinct from the number of created neutrons n_bank() above!
+  n_secondaries() = 0;
+
   zero_delayed_bank();
 
   // Reset fission logical
@@ -433,7 +451,7 @@ void Particle::event_revive_from_secondary()
 
     // Subtract secondary particle energy from interim pulse-height results
     if (!model::active_pulse_height_tallies.empty() &&
-        this->type() == ParticleType::photon) {
+        this->type().is_photon()) {
       // Since the birth cell of the particle has not been set we
       // have to determine it before the energy of the secondary particle can be
       // removed from the pulse-height of this cell.
@@ -516,7 +534,7 @@ void Particle::pht_collision_energy()
 
     // If the energy of the particle is below the cutoff, it will not be sampled
     // so its energy is added to the pulse-height in the cell
-    int photon = static_cast<int>(ParticleType::photon);
+    int photon = ParticleType::photon().transport_index();
     if (E() < settings::energy_cutoff[photon]) {
       pht_storage()[index] += E();
     }
@@ -735,9 +753,7 @@ void Particle::cross_periodic_bc(
   if (!neighbor_list_find_cell(*this)) {
     mark_as_lost("Couldn't find particle after hitting periodic "
                  "boundary on surface " +
-                 std::to_string(surf.id_) +
-                 ". The normal vector "
-                 "of one periodic surface may need to be reversed.");
+                 std::to_string(surf.id_) + ".");
     return;
   }
 
@@ -817,7 +833,7 @@ void Particle::write_restart() const
       break;
     }
     write_dataset(file_id, "id", id());
-    write_dataset(file_id, "type", static_cast<int>(type()));
+    write_dataset(file_id, "type", type().pdg_number());
 
     int64_t i = current_work();
     if (settings::run_mode == RunMode::EIGENVALUE) {
@@ -855,10 +871,12 @@ void Particle::update_neutron_xs(
 
   // If the cache doesn't match, recalculate micro xs
   if (this->E() != micro.last_E || this->sqrtkT() != micro.last_sqrtkT ||
-      i_sab != micro.index_sab || sab_frac != micro.sab_frac) {
+      i_sab != micro.index_sab || sab_frac != micro.sab_frac ||
+      ncrystal_xs != micro.ncrystal_xs) {
     data::nuclides[i_nuclide]->calculate_xs(i_sab, i_grid, sab_frac, *this);
 
     // If NCrystal is being used, update micro cross section cache
+    micro.ncrystal_xs = ncrystal_xs;
     if (ncrystal_xs >= 0.0) {
       data::nuclides[i_nuclide]->calculate_elastic_xs(*this);
       ncrystal_update_micro(ncrystal_xs, micro);
@@ -869,37 +887,6 @@ void Particle::update_neutron_xs(
 //==============================================================================
 // Non-method functions
 //==============================================================================
-
-std::string particle_type_to_str(ParticleType type)
-{
-  switch (type) {
-  case ParticleType::neutron:
-    return "neutron";
-  case ParticleType::photon:
-    return "photon";
-  case ParticleType::electron:
-    return "electron";
-  case ParticleType::positron:
-    return "positron";
-  }
-  UNREACHABLE();
-}
-
-ParticleType str_to_particle_type(std::string str)
-{
-  if (str == "neutron") {
-    return ParticleType::neutron;
-  } else if (str == "photon") {
-    return ParticleType::photon;
-  } else if (str == "electron") {
-    return ParticleType::electron;
-  } else if (str == "positron") {
-    return ParticleType::positron;
-  } else {
-    throw std::invalid_argument {fmt::format("Invalid particle name: {}", str)};
-  }
-}
-
 void add_surf_source_to_bank(Particle& p, const Surface& surf)
 {
   if (simulation::current_batch <= settings::n_inactive ||

@@ -5,6 +5,7 @@ from collections.abc import Iterable, Sequence, Mapping
 from functools import wraps
 from math import pi, sqrt, atan2
 from numbers import Integral, Real
+from pathlib import Path
 from typing import Protocol
 
 import h5py
@@ -16,6 +17,7 @@ import openmc
 import openmc.checkvalue as cv
 from openmc.checkvalue import PathLike
 from openmc.utility_funcs import change_directory
+from .bounding_box import BoundingBox
 from ._xml import get_elem_list, get_text
 from .mixin import IDManagerMixin
 from .surface import _BOUNDARY_TYPES
@@ -39,6 +41,11 @@ class MeshMaterialVolumes(Mapping):
         Array of shape (elements, max_materials) storing material IDs
     volumes : numpy.ndarray
         Array of shape (elements, max_materials) storing material volumes
+    bboxes : numpy.ndarray, optional
+        Array of shape (elements, max_materials, 6) storing axis-aligned
+        bounding boxes for each (element, material) combination with ordering
+        (xmin, ymin, zmin, xmax, ymax, zmax). Bounding boxes enclose the
+        ray-estimator prisms used to compute volumes.
 
     See Also
     --------
@@ -63,9 +70,30 @@ class MeshMaterialVolumes(Mapping):
     [(2, 31.87963824195591), (1, 6.129949130817542)]
 
     """
-    def __init__(self, materials: np.ndarray, volumes: np.ndarray):
+    def __init__(
+        self,
+        materials: np.ndarray,
+        volumes: np.ndarray,
+        bboxes: np.ndarray | None = None
+    ):
         self._materials = materials
         self._volumes = volumes
+        self._bboxes = bboxes
+
+        if self._bboxes is not None:
+            if self._bboxes.shape[:2] != self._materials.shape:
+                raise ValueError(
+                    'bboxes must have shape (elements, max_materials, 6) '
+                    'matching materials/volumes.'
+                )
+            if self._bboxes.shape[2] != 6:
+                raise ValueError(
+                    'bboxes must have shape (elements, max_materials, 6).'
+                )
+
+    @property
+    def has_bounding_boxes(self) -> bool:
+        return self._bboxes is not None
 
     @property
     def num_elements(self) -> int:
@@ -91,7 +119,11 @@ class MeshMaterialVolumes(Mapping):
             volumes[indices] = self._volumes[indices, i]
         return volumes
 
-    def by_element(self, index_elem: int) -> list[tuple[int | None, float]]:
+    def by_element(
+        self,
+        index_elem: int,
+        include_bboxes: bool = False
+    ) -> list[tuple[int | None, float] | tuple[int | None, float, BoundingBox | None]]:
         """Get a list of volumes for each material within a specific element.
 
         Parameters
@@ -101,15 +133,32 @@ class MeshMaterialVolumes(Mapping):
 
         Returns
         -------
-        list of tuple of (material ID, volume)
+        list of tuple
+            If ``include_bboxes`` is False (default), returns tuples of
+            (material ID, volume). If ``include_bboxes`` is True, returns
+            tuples of (material ID, volume, bounding box).
 
         """
         table_size = self._volumes.shape[1]
-        return [
-            (m if m > -1 else None, self._volumes[index_elem, i])
-            for i in range(table_size)
-            if (m := self._materials[index_elem, i]) != -2
-        ]
+        if include_bboxes and self._bboxes is None:
+            raise ValueError('Bounding boxes were not computed for this object.')
+
+        results = []
+        for i in range(table_size):
+            m = self._materials[index_elem, i]
+            if m == -2:
+                continue
+            mat_id = m if m > -1 else None
+            vol = self._volumes[index_elem, i]
+
+            if include_bboxes:
+                vals = self._bboxes[index_elem, i]
+                bbox = BoundingBox(vals[0:3], vals[3:6])
+                results.append((mat_id, vol, bbox))
+            else:
+                results.append((mat_id, vol))
+
+        return results
 
     def save(self, filename: PathLike):
         """Save material volumes to a .npz file.
@@ -119,8 +168,10 @@ class MeshMaterialVolumes(Mapping):
         filename : path-like
             Filename where data will be saved
         """
-        np.savez_compressed(
-            filename, materials=self._materials, volumes=self._volumes)
+        kwargs = {'materials': self._materials, 'volumes': self._volumes}
+        if self._bboxes is not None:
+            kwargs['bboxes'] = self._bboxes
+        np.savez_compressed(filename, **kwargs)
 
     @classmethod
     def from_npz(cls, filename: PathLike) -> MeshMaterialVolumes:
@@ -133,7 +184,8 @@ class MeshMaterialVolumes(Mapping):
 
         """
         filedata = np.load(filename)
-        return cls(filedata['materials'], filedata['volumes'])
+        bboxes = filedata['bboxes'] if 'bboxes' in filedata.files else None
+        return cls(filedata['materials'], filedata['volumes'], bboxes)
 
 
 class MeshBase(IDManagerMixin, ABC):
@@ -152,11 +204,17 @@ class MeshBase(IDManagerMixin, ABC):
         Unique identifier for the mesh
     name : str
         Name of the mesh
+    lower_left : Iterable of float
+        The lower-left coordinates
+    upper_right : Iterable of float
+        The upper-right coordinates
     bounding_box : openmc.BoundingBox
         Axis-aligned bounding box of the mesh as defined by the upper-right and
         lower-left coordinates.
     indices : Iterable of tuple
         An iterable of mesh indices for each mesh element, e.g. [(1, 1, 1), (2, 1, 1), ...]
+    n_elements : int
+        Number of elements in the mesh
     """
 
     next_id = 1
@@ -178,6 +236,16 @@ class MeshBase(IDManagerMixin, ABC):
             self._name = name
         else:
             self._name = ''
+            
+    @property
+    @abstractmethod
+    def lower_left(self):
+        pass
+        
+    @property
+    @abstractmethod
+    def upper_right(self):
+        pass
 
     @property
     def bounding_box(self) -> openmc.BoundingBox:
@@ -186,6 +254,11 @@ class MeshBase(IDManagerMixin, ABC):
     @property
     @abstractmethod
     def indices(self):
+        pass
+        
+    @property
+    @abstractmethod
+    def n_elements(self):
         pass
 
     def __repr__(self):
@@ -325,20 +398,10 @@ class MeshBase(IDManagerMixin, ABC):
             vols = material_volumes
         mat_volume_by_element = [vols.by_element(i) for i in range(vols.num_elements)]
 
+        # Get dictionary of all materials
+        materials = model._get_all_materials()
+
         # Create homogenized material for each element
-        materials = model.geometry.get_all_materials()
-
-        # Account for materials in DAGMC universes
-        # TODO: This should really get incorporated in lower-level calls to
-        # get_all_materials, but right now it requires information from the
-        # Model object
-        for cell in model.geometry.get_all_cells().values():
-            if isinstance(cell.fill, openmc.DAGMCUniverse):
-                names = cell.fill.material_names
-                materials.update({
-                    mat.id: mat for mat in model.materials if mat.name in names
-                })
-
         homogenized_materials = []
         for mat_volume_list in mat_volume_by_element:
             material_ids, volumes = [list(x) for x in zip(*mat_volume_list)]
@@ -375,6 +438,7 @@ class MeshBase(IDManagerMixin, ABC):
             model: openmc.Model,
             n_samples: int | tuple[int, int, int] = 10_000,
             max_materials: int = 4,
+            bounding_boxes: bool = False,
             **kwargs
     ) -> MeshMaterialVolumes:
         """Determine volume of materials in each mesh element.
@@ -397,6 +461,11 @@ class MeshBase(IDManagerMixin, ABC):
             the x, y, and z dimensions.
         max_materials : int, optional
             Estimated maximum number of materials in any given mesh element.
+        bounding_boxes : bool, optional
+            Whether to compute an axis-aligned bounding box for each
+            (mesh element, material) combination. When enabled, the bounding
+            box encloses the ray-estimator prisms used for the volume
+            estimation.
         **kwargs : dict
             Keyword arguments passed to :func:`openmc.lib.init`
 
@@ -410,7 +479,7 @@ class MeshBase(IDManagerMixin, ABC):
 
         # In order to get mesh into model, we temporarily replace the
         # tallies with a single mesh tally using the current mesh
-        original_tallies = model.tallies
+        original_tallies = list(model.tallies)
         new_tally = openmc.Tally()
         new_tally.filters = [openmc.MeshFilter(self)]
         new_tally.scores = ['flux']
@@ -428,7 +497,8 @@ class MeshBase(IDManagerMixin, ABC):
 
             # Compute material volumes
             volumes = mesh.material_volumes(
-                n_samples, max_materials, output=kwargs['output'])
+                n_samples, max_materials, output=kwargs['output'],
+                bounding_boxes=bounding_boxes)
 
         # Restore original tallies
         model.tallies = original_tallies
@@ -566,10 +636,19 @@ class StructuredMesh(MeshBase):
         s0 = (slice(0, -1),)*ndim + (slice(None),)
         s1 = (slice(1, None),)*ndim + (slice(None),)
         return (vertices[s0] + vertices[s1]) / 2
+    
+    @property
+    def n_elements(self):
+        return np.prod(self.dimension)
 
     @property
     def num_mesh_cells(self):
-        return np.prod(self.dimension)
+        warnings.warn(
+            "The 'num_mesh_cells' attribute is deprecated and will be removed in a future version. "
+            "Use 'n_elements' instead.",
+            FutureWarning, stacklevel=2
+        )
+        return self.n_elements
 
     def write_data_to_vtk(self,
                           filename: PathLike,
@@ -831,10 +910,10 @@ class StructuredMesh(MeshBase):
         """
         cv.check_type('data label', label, str)
 
-        if dataset.size != self.num_mesh_cells:
+        if dataset.size != self.n_elements:
             raise ValueError(
                 f"The size of the dataset '{label}' ({dataset.size}) should be"
-                f" equal to the number of mesh cells ({self.num_mesh_cells})"
+                f" equal to the number of mesh cells ({self.n_elements})"
             )
 
         # accept a flat array as-is, assuming it is in the correct order
@@ -2453,6 +2532,7 @@ class UnstructuredMesh(MeshBase):
     _UNSUPPORTED_ELEM = -1
     _LINEAR_TET = 0
     _LINEAR_HEX = 1
+    _VTK_TETRA = 10
 
     def __init__(self, filename: PathLike, library: str, mesh_id: int | None = None,
                  name: str = '', length_multiplier: float = 1.0,
@@ -2662,7 +2742,8 @@ class UnstructuredMesh(MeshBase):
         warnings.warn(
             "The 'UnstructuredMesh.write_vtk_mesh' method has been renamed "
             "to 'write_data_to_vtk' and will be removed in a future version "
-            " of OpenMC.", FutureWarning
+            " of OpenMC.",
+            FutureWarning,
         )
         self.write_data_to_vtk(**kwargs)
 
@@ -2680,9 +2761,10 @@ class UnstructuredMesh(MeshBase):
         Parameters
         ----------
         filename : str or pathlib.Path
-            Name of the VTK file to write. If the filename ends in '.vtu' then a
-            binary VTU format file will be written, if the filename ends in
-            '.vtk' then a legacy VTK file will be written.
+            Name of the VTK file to write. If the filename ends in '.vtkhdf'
+            then a VTKHDF format file will be written. If the filename ends in
+            '.vtu' then a binary VTU format file will be written. If the
+            filename ends in '.vtk' then a legacy VTK file will be written.
         datasets : dict
             Dictionary whose keys are the data labels and values are numpy
             appropriately sized arrays of the data
@@ -2690,6 +2772,35 @@ class UnstructuredMesh(MeshBase):
             Whether or not to normalize the data by the volume of the mesh
             elements
         """
+
+        if Path(filename).suffix == ".vtkhdf":
+
+            self._write_data_to_vtk_hdf5_format(
+                filename=filename,
+                datasets=datasets,
+                volume_normalization=volume_normalization,
+            )
+
+        elif Path(filename).suffix == ".vtk" or Path(filename).suffix == ".vtu":
+
+            self._write_data_to_vtk_ascii_format(
+                filename=filename,
+                datasets=datasets,
+                volume_normalization=volume_normalization,
+            )
+
+        else:
+            raise ValueError(
+                "Unsupported file extension, The filename must end with "
+                "'.vtkhdf', '.vtu' or '.vtk'"
+            )
+
+    def _write_data_to_vtk_ascii_format(
+        self,
+        filename: PathLike | None = None,
+        datasets: dict | None = None,
+        volume_normalization: bool = True,
+    ):
         from vtkmodules.util import numpy_support
         from vtkmodules import vtkCommonCore
         from vtkmodules import vtkCommonDataModel
@@ -2697,9 +2808,7 @@ class UnstructuredMesh(MeshBase):
         from vtkmodules import vtkIOXML
 
         if self.connectivity is None or self.vertices is None:
-            raise RuntimeError(
-                "This mesh has not been loaded from a statepoint file."
-            )
+            raise RuntimeError("This mesh has not been loaded from a statepoint file.")
 
         if filename is None:
             filename = f"mesh_{self.id}.vtk"
@@ -2781,29 +2890,128 @@ class UnstructuredMesh(MeshBase):
 
         writer.Write()
 
+    def _write_data_to_vtk_hdf5_format(
+        self,
+        filename: PathLike | None = None,
+        datasets: dict | None = None,
+        volume_normalization: bool = True,
+    ):
+        def append_dataset(dset, array):
+            """Convenience function to append data to an HDF5 dataset"""
+            origLen = dset.shape[0]
+            dset.resize(origLen + array.shape[0], axis=0)
+            dset[origLen:] = array
+
+        if self.library != "moab":
+            raise NotImplementedError("VTKHDF output is only supported for MOAB meshes")
+
+        # the self.connectivity contains arrays of length 8 to support hex
+        # elements as well, in the case of tetrahedra mesh elements, the
+        # last 4 values are -1 and are removed
+        trimmed_connectivity = []
+        for cell in self.connectivity:
+            # Find the index of the first -1 value, if any
+            first_negative_index = np.where(cell == -1)[0]
+            if first_negative_index.size > 0:
+                # Slice the array up to the first -1 value
+                trimmed_connectivity.append(cell[: first_negative_index[0]])
+            else:
+                # No -1 values, append the whole cell
+                trimmed_connectivity.append(cell)
+        trimmed_connectivity = np.array(trimmed_connectivity, dtype="int32").flatten()
+
+        # MOAB meshes supports tet elements only so we know it has 4 points per cell
+        points_per_cell = 4
+
+        # offsets are the indices of the first point of each cell in the array of points
+        offsets = np.arange(0, self.n_elements * points_per_cell + 1, points_per_cell)
+
+        for name, data in datasets.items():
+            if data.shape != self.dimension:
+                raise ValueError(
+                    f'Cannot apply dataset "{name}" with '
+                    f"shape {data.shape} to mesh {self.id} "
+                    f"with dimensions {self.dimension}"
+                )
+
+        with h5py.File(filename, "w") as f:
+
+            root = f.create_group("VTKHDF")
+            vtk_file_format_version = (2, 1)
+            root.attrs["Version"] = vtk_file_format_version
+            ascii_type = "UnstructuredGrid".encode("ascii")
+            root.attrs.create(
+                "Type",
+                ascii_type,
+                dtype=h5py.string_dtype("ascii", len(ascii_type)),
+            )
+
+            # create hdf5 file structure
+            root.create_dataset("NumberOfPoints", (0,), maxshape=(None,), dtype="i8")
+            root.create_dataset("Types", (0,), maxshape=(None,), dtype="uint8")
+            root.create_dataset("Points", (0, 3), maxshape=(None, 3), dtype="f")
+            root.create_dataset(
+                "NumberOfConnectivityIds", (0,), maxshape=(None,), dtype="i8"
+            )
+            root.create_dataset("NumberOfCells", (0,), maxshape=(None,), dtype="i8")
+            root.create_dataset("Offsets", (0,), maxshape=(None,), dtype="i8")
+            root.create_dataset("Connectivity", (0,), maxshape=(None,), dtype="i8")
+
+            append_dataset(root["NumberOfPoints"], np.array([len(self.vertices)]))
+            append_dataset(root["Points"], self.vertices)
+            append_dataset(
+                root["NumberOfConnectivityIds"],
+                np.array([len(trimmed_connectivity)]),
+            )
+            append_dataset(root["Connectivity"], trimmed_connectivity)
+            append_dataset(root["NumberOfCells"], np.array([self.n_elements]))
+            append_dataset(root["Offsets"], offsets)
+
+            append_dataset(
+                root["Types"], np.full(self.n_elements, self._VTK_TETRA, dtype="uint8")
+            )
+
+            cell_data_group = root.create_group("CellData")
+
+            for name, data in datasets.items():
+
+                cell_data_group.create_dataset(
+                    name, (0,), maxshape=(None,), dtype="float64", chunks=True
+                )
+
+                if volume_normalization:
+                    data /= self.volumes
+                append_dataset(cell_data_group[name], data)
+
     @classmethod
     def from_hdf5(cls, group: h5py.Group, mesh_id: int, name: str):
-        filename = group['filename'][()].decode()
-        library = group['library'][()].decode()
-        if 'options' in group.attrs:
+        filename = group["filename"][()].decode()
+        library = group["library"][()].decode()
+        if "options" in group.attrs:
             options = group.attrs['options'].decode()
         else:
             options = None
 
-        mesh = cls(filename=filename, library=library, mesh_id=mesh_id, name=name, options=options)
+        mesh = cls(
+            filename=filename,
+            library=library,
+            mesh_id=mesh_id,
+            name=name,
+            options=options,
+        )
         mesh._has_statepoint_data = True
-        vol_data = group['volumes'][()]
+        vol_data = group["volumes"][()]
         mesh.volumes = np.reshape(vol_data, (vol_data.shape[0],))
         mesh.n_elements = mesh.volumes.size
 
-        vertices = group['vertices'][()]
+        vertices = group["vertices"][()]
         mesh._vertices = vertices.reshape((-1, 3))
-        connectivity = group['connectivity'][()]
+        connectivity = group["connectivity"][()]
         mesh._connectivity = connectivity.reshape((-1, 8))
-        mesh._element_types = group['element_types'][()]
+        mesh._element_types = group["element_types"][()]
 
-        if 'length_multiplier' in group:
-            mesh.length_multiplier = group['length_multiplier'][()]
+        if "length_multiplier" in group:
+            mesh.length_multiplier = group["length_multiplier"][()]
 
         return mesh
 
@@ -2822,7 +3030,7 @@ class UnstructuredMesh(MeshBase):
 
         element.set("library", self._library)
         if self.options is not None:
-            element.set('options', self.options)
+            element.set("options", self.options)
         subelement = ET.SubElement(element, "filename")
         subelement.text = str(self.filename)
 
