@@ -17,6 +17,7 @@
 #define OPENMC_TENSOR_H
 
 #include "openmc/vector.h"
+#include "openmc/error.h"
 
 #include <algorithm>
 #include <array>
@@ -1124,6 +1125,53 @@ Tensor<T> linspace(T start, T stop, size_t n)
       start + static_cast<T>(i) * (stop - start) / static_cast<T>(n - 1);
   }
   return result;
+}
+
+//! Interpolate an x-y tensor pair to another set of values
+template<class E1, class E2, class E3, typename T>
+inline Tensor<T> interp(const E1& x, const E2& xp, const E3& fp, T left, T right)
+{
+  if (x.ndim() != 1 || xp.ndim() != 1)
+    fatal_error("Interpolation must be performed on 1D Tensors.");
+  if (!std::is_sorted(x.cbegin(), x.cend()) || !std::is_sorted(xp.cbegin(), xp.cbegin()))
+    fatal_error("Interpolation axes must be sorted before interpolating.");
+  
+  size_t i = 0;
+  size_t imax = x.size();
+  size_t xp_size = xp.size();
+  size_t ip = 1;
+
+  Tensor<T> f({imax});
+  for (; i < imax; ++i) {
+    if (x[i] > xp[0]) break;
+    f[i] = static_cast<T>(left);
+  }
+
+  for (; imax > 0; --imax) {
+    if (x[imax - 1] < xp[xp_size - 1]) break;
+    f[imax - 1] = static_cast<T>(right);
+  }
+
+  if (imax == 0) return f;
+  --imax;
+
+  for (; i <= imax; ++i) {
+    while (x[i] > xp[ip]) ++ip;
+    
+    double dfp = static_cast<double>(fp[ip] - fp[ip - 1]);
+    double dxp = static_cast<double>(xp[ip] - xp[ip - 1]);
+    double dx = static_cast<double>(x[i] - xp[ip - 1]);
+
+    f[i] = fp[ip - 1] + static_cast<T>(dfp / dxp * dx);
+  }
+  
+  return f;
+}
+
+template<class E1, class E2, class E3>
+inline auto interp(const E1& x, const E2& xp, const E3& fp)
+{
+  return interp(x, xp, fp, fp[0], fp[fp.size() - 1]);
 }
 
 //! Concatenate two 1D tensors end-to-end

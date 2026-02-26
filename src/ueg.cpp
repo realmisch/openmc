@@ -7,15 +7,7 @@
 #include "openmc/search.h"
 #include "openmc/memory.h"
 #include "openmc/vector.h"
-
-#include "xtensor/xtensor.hpp"
-#include "xtensor/xview.hpp"
-#include "xtensor/xmath.hpp"
-#include "xtensor/xadapt.hpp"
-#include "xtensor/xbuilder.hpp"
-#include "xtensor/xnoalias.hpp"
-
-#include "xtensor/xnpy.hpp"
+#include "openmc/tensor.h"
 
 #include "openmc/reaction.h"
 
@@ -65,19 +57,23 @@ namespace openmc {
     while (*max_it > E_max) max_it--;
 
     ueg.erase(ueg.begin(), min_it + 1);
-    ueg.erase(max_it - 1, ueg.end());
- 
-    ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
+    if (imp_e_grid.size() > static_cast<size_t>(ueg.end() - max_it)) {
+      ueg.insert(max_it - 1, imp_e_grid.begin(), imp_e_grid.end());
+    } else {
+      ueg.erase(max_it - 1, ueg.end());
+      ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
+    }
 
     std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
-    ueg.erase(std::unique(ueg.begin(), ueg.end()), ueg.end());
+    ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
+    write_message("{} Indices in UEG", ueg.size());
 
     //Generate logarithmic bin indices for double indexing
     //Identical algorithm to Nuclide::init_grid
     int M = settings::n_log_bins;
 
     double pseudo_spacing = std::log(E_max / E_min);
-    auto umesh = xt::linspace(0.0, pseudo_spacing, M + 1);
+    auto umesh = tensor::linspace(0.0, pseudo_spacing, M + 1);
 
     int ueg_size = ueg.size();
     ueg_index.resize(M + 1);
@@ -115,9 +111,8 @@ namespace openmc {
 
   void create_union_energy_xs() {
     Nuclide::EnergyGrid & ueg = *data::union_e_grid;
-    auto e = xt::adapt(ueg.energy);
-    //xt::dump_npy("orig.npy", xt::adapt(data::nuclides[0]->grid_[0].energy));
-    //xt::dump_npy("orig_xs.npy", data::nuclides[0]->xs_[0]);
+    const auto e = tensor::Tensor<double>(ueg.energy.data(), ueg.energy.size());
+
     //Iterate through all nuclides to update XS
     for (auto & nuclide : data::nuclides) {
       write_message("Processing {}", nuclide->name_);
@@ -126,24 +121,44 @@ namespace openmc {
       for (auto& rxn : nuclide->reactions_) {
         for (int t = 0; t < nuclide->kTs_.size(); t++) {
           auto & xs = rxn->xs_[t];
-          auto ep = xt::view(xt::adapt(grid[t].energy), xt::range(xs.threshold, grid[t].energy.size()));
+          auto n_energies = grid[t].energy.size();
+          auto grid_data = tensor::Tensor<double>(grid[t].energy.data(), n_energies);
+          auto ep = grid_data.slice(tensor::range(xs.threshold, n_energies));
           
+          auto xsp = tensor::Tensor<double>(xs.value.data(), xs.threshold + xs.value.size());
           if (xs.threshold != 0)
             xs.threshold = lower_bound_index(ueg.energy.begin(), ueg.energy.end(), ep[0]);
 
-          auto xsp = xt::view(xt::adapt(xs.value), xt::all());
-          auto rxn_xs = xt::interp(xt::view(e, xt::range(xs.threshold, e.size())), ep, xsp, 0.0, xs.value.back());
-          
-          xs.value = vector<double>(rxn_xs.begin(), rxn_xs.end());
+          auto e_grid = e.slice(tensor::range(xs.threshold, e.size()));
+
+          auto rxn_xs = tensor::interp(e_grid, ep, xsp, 0.0, xs.value.back());
+          xs.value = vector<double>(rxn_xs.cbegin(), rxn_xs.cend());
         }
       }
+      
       for (int t = 0; t < nuclide->kTs_.size(); t++) grid[t] = ueg;
-      auto temp = xt::interp(xt::adapt(ueg.energy), xt::adapt(nuclide->energy_0K_), xt::adapt(nuclide->elastic_0K_));
+ 
+      auto energy_0K = tensor::Tensor<double>(nuclide->energy_0K_.data(), nuclide->energy_0K_.size());
+      auto elastic_0K = tensor::Tensor<double>(nuclide->elastic_0K_.data(), nuclide->elastic_0K_.size());
+      auto temp = tensor::interp(e, energy_0K, elastic_0K);
+
+
       nuclide->energy_0K_ = ueg.energy;
-      nuclide->elastic_0K_ = vector<double>(temp.begin(), temp.end()); 
+      nuclide->elastic_0K_ = vector<double>(temp.cbegin(), temp.cend()); 
       nuclide->create_ue_derived(nuclide->prompt_photons_.get(), nuclide->delayed_photons_.get());
     }
-  //xt::dump_npy("erg.npy", xt::adapt(data::union_e_grid->energy));
-  //xt::dump_npy("xs.npy", data::nuclides[0]->xs_[0]);
+
+    /*
+    for (auto & nuc : data::nuclides) {
+      write_message("Printing {}", nuc->name_);
+      std::ofstream puFile;
+      puFile.open(nuc->name_ + ".txt");
+      auto & print_nuc = nuc->xs_[0];
+      for (int o=0; o < e.size(); o++) {
+        puFile << ueg.energy[o] << " " << print_nuc(o, 0) << " "
+          << print_nuc(o, 1) << " " << print_nuc(o, 2) << " " << print_nuc(o, 3) << " " << print_nuc(o, 4) << std::endl;
+      }
+      puFile.close();
+    }*/
   }
 } // namespace openmc
