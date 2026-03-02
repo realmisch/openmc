@@ -403,7 +403,6 @@ void Nuclide::create_derived(
       // Skip redundant reactions
       if (rx->redundant_)
         continue;
-
       // Add contribution to total cross section
       xs_[t].slice(tensor::range(j, j + n), XS_TOTAL) += xs;
 
@@ -498,7 +497,139 @@ void Nuclide::create_derived(
 void Nuclide::create_ue_derived(
   const Function1D* prompt_photons, const Function1D* delayed_photons) 
 {
-  this->create_derived(prompt_photons, delayed_photons);
+  const auto& ueg = *data::union_e_grid;
+  for (int t = 0; t < kTs_.size(); t++) {
+    // Allocate and initialize cross section
+    xs_.push_back(tensor::zeros<double>({ueg.energy.size(), 5}));
+  }
+
+  reaction_index_.fill(C_NONE);
+  for (int i = 0; i < reactions_.size(); ++i) {
+    const auto& rx {reactions_[i]};
+
+    // Set entry in direct address table for reaction
+    reaction_index_[rx->mt_] = i;
+
+    for (int t = 0; t < kTs_.size(); ++t) {
+      int j = rx->xs_[t].threshold;
+      int n = rx->xs_[t].value.size();
+      auto xs = tensor::Tensor<double>(
+        rx->xs_[t].value.data(), rx->xs_[t].value.size());
+      for (const auto& p : rx->products_) {
+        if (p.particle_.is_photon()) {
+          for (int k = 0; k < n; ++k) {
+            double E = ueg.energy[k + j];
+
+            // For fission, artificially increase the photon yield to
+            // account for delayed photons
+            double f = 1.0;
+            if (settings::delayed_photon_scaling) {
+              if (is_fission(rx->mt_)) {
+                if (prompt_photons && delayed_photons) {
+                  double energy_prompt = (*prompt_photons)(E);
+                  double energy_delayed = (*delayed_photons)(E);
+                  f = (energy_prompt + energy_delayed) / (energy_prompt);
+                }
+              }
+            }
+
+            xs_[t](j + k, XS_PHOTON_PROD) += f * xs[k] * (*p.yield_)(E);
+          }
+        }
+      }
+
+      // Skip redundant reactions
+      if (rx->redundant_)
+        continue;
+      // Add contribution to total cross section
+      xs_[t].slice(tensor::range(j, j + n), XS_TOTAL) += xs;
+
+      // Add contribution to absorption cross section
+      if (is_disappearance(rx->mt_)) {
+        xs_[t].slice(tensor::range(j, j + n), XS_ABSORPTION) += xs;
+      }
+
+      if (is_fission(rx->mt_)) {
+        fissionable_ = true;
+        xs_[t].slice(tensor::range(j, j + n), XS_FISSION) += xs;
+        xs_[t].slice(tensor::range(j, j + n), XS_ABSORPTION) += xs;
+
+        // Keep track of fission reactions
+        if (t == 0) {
+          fission_rx_.push_back(rx.get());
+          if (rx->mt_ == N_F)
+            has_partial_fission_ = true;
+        }
+      }
+    }
+  }
+
+  // Determine number of delayed neutron precursors
+  if (fissionable_) {
+    for (const auto& product : fission_rx_[0]->products_) {
+      if (product.emission_mode_ == EmissionMode::delayed) {
+        ++n_precursor_;
+      }
+    }
+  }
+
+  // Calculate nu-fission cross section
+  for (int t = 0; t < kTs_.size(); ++t) {
+    if (fissionable_) {
+      int n = ueg.energy.size();
+      for (int i = 0; i < n; ++i) {
+        double E = ueg.energy[i];
+        xs_[t](i, XS_NU_FISSION) =
+          nu(E, EmissionMode::total) * xs_[t](i, XS_FISSION);
+      }
+    }
+  }
+
+  if (settings::res_scat_on) {
+    // Determine if this nuclide should be treated as a resonant scatterer
+    if (!settings::res_scat_nuclides.empty()) {
+      // If resonant nuclides were specified, check the list explicitly
+      for (const auto& name : settings::res_scat_nuclides) {
+        if (name_ == name) {
+          resonant_ = true;
+
+          // Make sure nuclide has 0K data
+          if (energy_0K_.empty()) {
+            fatal_error("Cannot treat " + name_ +
+                        " as a resonant scatterer "
+                        "because 0 K elastic scattering data is not present.");
+          }
+          break;
+        }
+      }
+    } else {
+      // Otherwise, assume that any that have 0 K elastic scattering data
+      // are resonant
+      resonant_ = !energy_0K_.empty();
+    }
+
+    if (resonant_) {
+      // Build CDF for 0K elastic scattering
+      double xs_cdf_sum = 0.0;
+      xs_cdf_.resize(energy_0K_.size());
+      xs_cdf_[0] = 0.0;
+
+      const auto& E = energy_0K_;
+      auto& xs = elastic_0K_;
+      for (int i = 0; i < E.size() - 1; ++i) {
+        // Negative cross sections result in a CDF that is not monotonically
+        // increasing. Set all negative xs values to zero.
+        if (xs[i] < 0.0)
+          xs[i] = 0.0;
+
+        // build xs cdf
+        xs_cdf_sum +=
+          (std::sqrt(E[i]) * xs[i] + std::sqrt(E[i + 1]) * xs[i + 1]) / 2.0 *
+          (E[i + 1] - E[i]);
+        xs_cdf_[i + 1] = xs_cdf_sum;
+      }
+    }
+  }
 }
 
 void Nuclide::init_grid()

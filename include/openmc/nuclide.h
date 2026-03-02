@@ -12,6 +12,7 @@
 #include "openmc/array.h"
 #include "openmc/constants.h"
 #include "openmc/endf.h"
+#include "openmc/energy_grid.h"
 #include "openmc/memory.h" // for unique_ptr
 #include "openmc/particle.h"
 #include "openmc/reaction.h"
@@ -32,11 +33,7 @@ public:
   //============================================================================
   // Types, aliases
   using EmissionMode = ReactionProduct::EmissionMode;
-  struct EnergyGrid {
-    vector<int> grid_index;
-    vector<double> energy;
-  };
-
+ 
   //============================================================================
   // Constructors/destructors
   Nuclide(hid_t group, const vector<double>& temperature);
@@ -100,7 +97,7 @@ public:
 
   // Temperature dependent cross section data
   vector<double> kTs_;                //!< temperatures in eV (k*T)
-  vector<EnergyGrid> grid_;           //!< Energy grid at each temperature
+  GridVector<EnergyGrid> grid_;           //!< Energy grid at each temperature
   vector<tensor::Tensor<double>> xs_; //!< Cross sections at each temperature
 
   // Multipole data

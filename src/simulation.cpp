@@ -5,6 +5,7 @@
 #include "openmc/collision_track.h"
 #include "openmc/container_util.h"
 #include "openmc/eigenvalue.h"
+#include "openmc/energy_grid.h"
 #include "openmc/error.h"
 #include "openmc/event.h"
 #include "openmc/geometry_aux.h"
@@ -761,6 +762,7 @@ void initialize_data()
     settings::n_log_bins;
 
   if (settings::ue_grid) {
+    data::union_e_grid = std::make_shared<EnergyGrid>();
     create_union_energy_grid();
   }
 

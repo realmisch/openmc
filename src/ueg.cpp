@@ -1,6 +1,7 @@
 #include<fmt/core.h>
 #include<execution>
 
+#include "openmc/energy_grid.h"
 #include "openmc/ueg.h"
 #include "openmc/nuclide.h"
 #include "openmc/settings.h"
@@ -13,11 +14,11 @@
 
 namespace openmc {
   namespace data {
-    std::shared_ptr<Nuclide::EnergyGrid> union_e_grid;
+    bool use_ueg = false;
+    std::shared_ptr<EnergyGrid> union_e_grid;
   } // namespace data
 
   void create_union_energy_grid() {
-    data::union_e_grid = std::make_shared<Nuclide::EnergyGrid>();
     int neutron = ParticleType::neutron().transport_index();
     double E_min = data::energy_min[neutron];
     double E_max = data::energy_max[neutron];
@@ -29,8 +30,10 @@ namespace openmc {
     vector<double>& ueg = data::union_e_grid->energy;
     vector<int>& ueg_index = data::union_e_grid->grid_index;
 
+    int num_temps = 0;
     //Get energies from all nuclides
     for (const auto& nuclide : data::nuclides) {
+      num_temps += nuclide->kTs_.size();
       for (int t = 0; t < nuclide->kTs_.size(); t++) {
          vector<double>& energies = nuclide->grid_[t].energy;
          ueg.insert(ueg.end(), energies.begin(), energies.end());
@@ -66,7 +69,10 @@ namespace openmc {
 
     std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
     ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
-    write_message("{} Indices in UEG", ueg.size());
+    
+    double mem_size = (double)(ueg.size()*num_temps*data::nuclides.size()) * 12.0 / 1073741824.0;
+    if (mem_size > 10)
+      warning(fmt::format("{} GB required for UEG", mem_size));
 
     //Generate logarithmic bin indices for double indexing
     //Identical algorithm to Nuclide::init_grid
@@ -87,6 +93,7 @@ namespace openmc {
       ueg_index[k] = j;
     }
     create_union_energy_xs();
+    data::use_ueg = true;
   }
 
   void thin_union_energy_grid() {
@@ -110,7 +117,7 @@ namespace openmc {
   }
 
   void create_union_energy_xs() {
-    Nuclide::EnergyGrid & ueg = *data::union_e_grid;
+    EnergyGrid & ueg = *data::union_e_grid;
     const auto e = tensor::Tensor<double>(ueg.energy.data(), ueg.energy.size());
 
     //Iterate through all nuclides to update XS
@@ -135,13 +142,12 @@ namespace openmc {
           xs.value = vector<double>(rxn_xs.cbegin(), rxn_xs.cend());
         }
       }
-      
-      for (int t = 0; t < nuclide->kTs_.size(); t++) grid[t] = ueg;
+      //for (auto& grid_t : grid) grid_t = ueg;
  
       auto energy_0K = tensor::Tensor<double>(nuclide->energy_0K_.data(), nuclide->energy_0K_.size());
       auto elastic_0K = tensor::Tensor<double>(nuclide->elastic_0K_.data(), nuclide->elastic_0K_.size());
       auto temp = tensor::interp(e, energy_0K, elastic_0K);
-
+      grid.erase(1 + grid.begin(), grid.end());
 
       nuclide->energy_0K_ = ueg.energy;
       nuclide->elastic_0K_ = vector<double>(temp.cbegin(), temp.cend()); 
