@@ -50,8 +50,15 @@ namespace openmc {
       }
     }
     //Sort ueg energy and thin redundant points according to the thinning cutoff parameter
-    std::sort(ueg.begin(), ueg.end());
     thin_union_energy_grid();
+    std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
+
+    ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
+
+    std::inplace_merge(std::execution::par_unseq,
+                       ueg.begin(),
+                       ueg.begin() + (ueg.size() - imp_e_grid.size()),
+                       ueg.end());
 
     auto min_it = ueg.begin();
     auto max_it = --ueg.end();
@@ -60,16 +67,9 @@ namespace openmc {
     while (*max_it > E_max) max_it--;
 
     ueg.erase(ueg.begin(), min_it + 1);
-    if (imp_e_grid.size() > static_cast<size_t>(ueg.end() - max_it)) {
-      ueg.insert(max_it - 1, imp_e_grid.begin(), imp_e_grid.end());
-    } else {
-      ueg.erase(max_it - 1, ueg.end());
-      ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
-    }
+    ueg.erase(max_it - 1, ueg.end());
+  ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
 
-    std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
-    ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
-    
     double mem_size = (double)(ueg.size()*num_temps*data::nuclides.size()) * 12.0 / 1073741824.0;
     if (mem_size > 10)
       warning(fmt::format("{} GB required for UEG", mem_size));
@@ -142,8 +142,8 @@ namespace openmc {
           xs.value = vector<double>(rxn_xs.cbegin(), rxn_xs.cend());
         }
       }
-      //for (auto& grid_t : grid) grid_t = ueg;
- 
+      // TODO - Replace [] overload with EnergyGrid pointers
+      
       auto energy_0K = tensor::Tensor<double>(nuclide->energy_0K_.data(), nuclide->energy_0K_.size());
       auto elastic_0K = tensor::Tensor<double>(nuclide->elastic_0K_.data(), nuclide->elastic_0K_.size());
       auto temp = tensor::interp(e, energy_0K, elastic_0K);
@@ -153,18 +153,5 @@ namespace openmc {
       nuclide->elastic_0K_ = vector<double>(temp.cbegin(), temp.cend()); 
       nuclide->create_ue_derived(nuclide->prompt_photons_.get(), nuclide->delayed_photons_.get());
     }
-
-    /*
-    for (auto & nuc : data::nuclides) {
-      write_message("Printing {}", nuc->name_);
-      std::ofstream puFile;
-      puFile.open(nuc->name_ + ".txt");
-      auto & print_nuc = nuc->xs_[0];
-      for (int o=0; o < e.size(); o++) {
-        puFile << ueg.energy[o] << " " << print_nuc(o, 0) << " "
-          << print_nuc(o, 1) << " " << print_nuc(o, 2) << " " << print_nuc(o, 3) << " " << print_nuc(o, 4) << std::endl;
-      }
-      puFile.close();
-    }*/
   }
 } // namespace openmc
