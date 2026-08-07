@@ -523,6 +523,25 @@ void Material::init_thermal()
   thermal_tables_ = tables;
 }
 
+void Material::init_material_ueg()
+{
+  
+  for (auto & nuc : nuclide_) {
+    for (int t = 0; t <  nuc->kTs_.size(); t++) {
+      vector<double> & energies = nuc->grid_[t].energy;
+      //insert into material ueg
+      
+      if (nuc->urr_present_) {
+        const auto & urr_energies = nuc->urr_data[t].energy_;
+        //insert into important material ueg
+      }
+
+      for (auto & rxn : nuc->reactions_)
+        //insert into important material ueg
+    }
+  }
+}
+
 void Material::collision_stopping_power(double* s_col, bool positron)
 {
   // Average electron number and average atomic weight
