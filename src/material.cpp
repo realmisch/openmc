@@ -525,7 +525,7 @@ void Material::init_thermal()
 
 void Material::init_material_ueg()
 {
-  vector<EnergyGrid> important_point;
+  EnergyGrid important_point;
   vector<double> checked_kTs;
 
   for (auto & nuc : nuclide_)
@@ -534,46 +534,57 @@ void Material::init_material_ueg()
         checked_kTs.insert(kT);
   std::sort(checked_kTs.begin(), checked_kTs.end());
 
-  ue_grid_.resize(checked_kTs.size());
-  important_points.resize(checked_kTs.size());
+  macro_xs_.resize(checked_kTs.size());
 
   for (auto & nuc : nuclide_) {
     for (int t = 0; t <  nuc->kTs_.size(); t++) {
       auto kT_idx = std::lower_bound(checked_kTs.begin(), checked_kTs.end(), nuc->kTs_[t]);
 
       EnergyGrid & grid = nuc->grid_[t];
-      ue_grid_[t_idx].insert_grid(grid.energy);
+      ue_grid_.insert_grid(grid.energy);
       
       if (nuc->urr_present_) {
         const auto & urr_energies = nuc->urr_data[t].energy_;
-        important_points[kT_idx].insert_grid(urr_energies);
+        important_points.insert_grid(urr_energies);
       }
       
       for (auto & rxn : nuc->reactions_) {
         auto threshold = grid.energy[rxn->xs_[t].threshold;
         if (threshold != 0)
-          important_points[kT_idx].energy.insert(grid[t].energy[threshold]);
+          important_points.energy.insert(grid[t].energy[threshold]);
       }
     }
   }
 
-  for (int t = 0; t < checked_kTs.size(); t++) {
-    auto & grid = ue_grid_[t];
-    auto & imp_grid = important_points[t].energy;
+  auto & imp_grid = important_points[t].energy;
 
-    grid.thin_grid(settings::ue_cutoff);
-    std::sort(std::execution_par_unseq, grid.begin(), grid.end());
+  ue_grid_.thin_grid(settings::ue_cutoff);
+  ue_grid_.insert_grid(imp_grid, true);
 
-    grid.insert(grid.end(), imp_grid.begin(), imp_grid.end());
-    std::inplace_merge(std::execution_par_unseq,
-                       grid.begin(),
-                       grid.begin() + (grid.size() - imp_grid.size()),
-                       grid.end());
-    grid.erase(std::unique(std::execution_par_unseq, 
-                           grid.begin(), 
-                           grid.end()),
-               grid.end());
-    grid.update_dix_and_bound();
+  ue_grid_.update_dix_and_bound();
+  
+  Particle p = Particle();
+  p.type() = ParticleType::neutron();
+  initialize_particle_track(p, 1);
+
+  vector<double> energy = ue_grid_.energy;
+  for (int t = 0; t < checked_kTs.size(); ++t) { 
+    vector<MacroXS> & xs = macro_xs_[t];
+    xs.resize(energy.size());
+
+    for (int i = 0; i < energy.size(); i++) {
+      p.E() = energy[i];
+      p.kT() = checked_kTs[i]; 
+      this->calculate_xs(p);
+
+      xs[i] = {
+        .total = p.macro_xs().total,
+        .absorption = p.macro_xs().absorption,
+        .fission = p.macro_xs().fission,
+        .nu_fission = p.macro_xs().nu_fission,
+        .photon_prod = p.macro_xs().photon_prod
+      }
+    }
   }
 }
 

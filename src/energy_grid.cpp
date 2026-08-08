@@ -2,10 +2,17 @@
 #include "openmc/energy_grid.h"
 
 namespace openmc {
-  void EnergyGrid::insert_grid(const vector<double> &other) {
-
+  void EnergyGrid::insert_grid(const vector<double> &other, const bool sort_result = false) {
     energy.insert(energy.end(), other.begin(), other.end());
-    energy.erase(std::unique(std::execution_par_unseq, energy.begin(), energy.end()), energy.end());
+    if (sort_result)
+      std::inplace_merge(std::execution_par_unseq,
+                         energy.begin(),
+                         energy.begin() + (energy.size() - other.size()),
+                         energy.end());
+    energy.erase(std::unique(std::execution_par_unseq, 
+                             energy.begin(), 
+                             energy.end()), 
+                 energy.end());
   }
 
   

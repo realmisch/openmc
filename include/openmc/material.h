@@ -206,6 +206,10 @@ public:
   // material, the entry is set to -1.
   vector<int> mat_nuclide_index_;
 
+  // Unionized energy grid and macroscopic cross sections
+  EnergyGrid ue_grid_;
+  vector<vector<MacroXS>> macro_xs_; 
+
   // Thermal scattering tables
   vector<ThermalTable> thermal_tables_;
 
