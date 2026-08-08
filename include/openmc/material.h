@@ -61,6 +61,9 @@ public:
   //! so the code knows when to apply bound thermal scattering data
   void init_thermal();
 
+  //! Initialize material-wise unionized energy grid
+  void init_material_ueg();
+
   //! Set up mapping between global nuclides vector and indices in nuclide_
   void init_nuclide_index();
 

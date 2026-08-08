@@ -525,11 +525,21 @@ void Material::init_thermal()
 
 void Material::init_material_ueg()
 {
-  
+  set<double> checked_kTs;
+  for (auto & nuc : nuclide_)
+    for (auto kT : nuc->kTs_)
+      if (!checked_kTs.contains(kT))
+        checked_kTs.insert(kT);
+
+  macro_xs_.resize(checked_kTs.size());
+
   for (auto & nuc : nuclide_) {
     for (int t = 0; t <  nuc->kTs_.size(); t++) {
-      vector<double> & energies = nuc->grid_[t].energy;
+      if (auto search = checked_kTs.find(nuc->kTs_[t]); search == checked_kTs.end())
+        continue;
+      EnergyGrid & grid = nuc->grid_[t];
       //insert into material ueg
+      macro_xs_.insert_grid(grid);
       
       if (nuc->urr_present_) {
         const auto & urr_energies = nuc->urr_data[t].energy_;
