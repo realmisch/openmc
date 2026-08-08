@@ -525,30 +525,55 @@ void Material::init_thermal()
 
 void Material::init_material_ueg()
 {
-  set<double> checked_kTs;
+  vector<EnergyGrid> important_point;
+  vector<double> checked_kTs;
+
   for (auto & nuc : nuclide_)
     for (auto kT : nuc->kTs_)
       if (!checked_kTs.contains(kT))
         checked_kTs.insert(kT);
+  std::sort(checked_kTs.begin(), checked_kTs.end());
 
-  macro_xs_.resize(checked_kTs.size());
+  ue_grid_.resize(checked_kTs.size());
+  important_points.resize(checked_kTs.size());
 
   for (auto & nuc : nuclide_) {
     for (int t = 0; t <  nuc->kTs_.size(); t++) {
-      if (auto search = checked_kTs.find(nuc->kTs_[t]); search == checked_kTs.end())
-        continue;
+      auto kT_idx = std::lower_bound(checked_kTs.begin(), checked_kTs.end(), nuc->kTs_[t]);
+
       EnergyGrid & grid = nuc->grid_[t];
-      //insert into material ueg
-      macro_xs_.insert_grid(grid);
+      ue_grid_[t_idx].insert_grid(grid.energy);
       
       if (nuc->urr_present_) {
         const auto & urr_energies = nuc->urr_data[t].energy_;
-        //insert into important material ueg
+        important_points[kT_idx].insert_grid(urr_energies);
       }
-
-      for (auto & rxn : nuc->reactions_)
-        //insert into important material ueg
+      
+      for (auto & rxn : nuc->reactions_) {
+        auto threshold = grid.energy[rxn->xs_[t].threshold;
+        if (threshold != 0)
+          important_points[kT_idx].energy.insert(grid[t].energy[threshold]);
+      }
     }
+  }
+
+  for (int t = 0; t < checked_kTs.size(); t++) {
+    auto & grid = ue_grid_[t];
+    auto & imp_grid = important_points[t].energy;
+
+    grid.thin_grid(settings::ue_cutoff);
+    std::sort(std::execution_par_unseq, grid.begin(), grid.end());
+
+    grid.insert(grid.end(), imp_grid.begin(), imp_grid.end());
+    std::inplace_merge(std::execution_par_unseq,
+                       grid.begin(),
+                       grid.begin() + (grid.size() - imp_grid.size()),
+                       grid.end());
+    grid.erase(std::unique(std::execution_par_unseq, 
+                           grid.begin(), 
+                           grid.end()),
+               grid.end());
+    grid.update_dix_and_bound();
   }
 }
 

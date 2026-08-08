@@ -2,12 +2,13 @@
 #include "openmc/energy_grid.h"
 
 namespace openmc {
-  void EnergyGrid::insert_grid(const &EnergyGrid other) {
-    vector<double> & other_energy = other.energy;
+  void EnergyGrid::insert_grid(const vector<double> &other) {
 
-    energy.insert(energy.end(), other_energy.begin(), other_energy.end());
+    energy.insert(energy.end(), other.begin(), other.end());
     energy.erase(std::unique(std::execution_par_unseq, energy.begin(), energy.end()), energy.end());
   }
+
+  
 
   void EnergyGrid::thin_grid(double tolerance) {
     int grid_size = 0;
@@ -25,10 +26,21 @@ namespace openmc {
     energy.resize(grid_size + 1);
   }
 
-  void EnergyGrid::update_double_index() {
+  void EnergyGrid::update_dix_and_bound() {
     int neutron = ParticleType::neutron().transport_index();
     double E_min = data::energy_min[neutron];
     double E_max = data::energy_max[neutron];
+
+    auto min_it = energy.begin();
+    auto max_it = --energy.end();
+
+    while (*min_it < E_min) min_it++;
+    while (*max_it > E_max) max_it--;
+
+    if (max_it + 1 != grid.end())
+      grid.erase(max_it - 1, grid.end());
+    if (min_it != grid.begin())
+      grid.erase(grid.begin(), min_it + 1);
 
     int M = settings::n_log_bins;
     auto umesh = tensor::linspace(0.0, std::log(E_max / E_min), M + 1);

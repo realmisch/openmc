@@ -14,9 +14,10 @@ namespace openmc {
     vector<int> grid_index;
     vector<double> energy;
 
-    void insert_grid(const &EnergyGrid other);
+    void insert_grid(const vector<double> &other);
+    
     void thin_grid(double tolerance);
-    void update_double_index();
+    void update_dix_and_bound();
   };
 } //namespace openmc
 
