@@ -26,17 +26,6 @@ enum class WeightWindowUpdateMethod { MAGIC, FW_CADIS };
 constexpr double DEFAULT_WEIGHT_CUTOFF {1.0e-38}; // default low weight cutoff
 
 //==============================================================================
-// Non-member functions
-//==============================================================================
-
-//! Apply weight windows to a particle
-//! \param[in] p  Particle to apply weight windows to
-void apply_weight_windows(Particle& p);
-
-//! Free memory associated with weight windows
-void free_memory_weight_windows();
-
-//==============================================================================
 // Global variables
 //==============================================================================
 
@@ -63,8 +52,12 @@ struct WeightWindow {
   double weight_cutoff {DEFAULT_WEIGHT_CUTOFF};
   int max_split {10};
 
-  //! Whether the weight window is in a valid state
-  bool is_valid() const { return lower_weight >= 0.0; }
+  //! Whether the weight window is in a valid state. A non-positive lower
+  //! bound indicates that no weight window information exists at this
+  //! location (generators mark such cells with -1, and a lower bound of zero
+  //! conventionally turns the weight window game off in a cell, as in MCNP
+  //! wwinp files), in which case no weight window game is played.
+  bool is_valid() const { return lower_weight > 0.0; }
 
   //! Adjust the weight window by a constant factor
   void scale(double factor)
@@ -137,7 +130,7 @@ public:
 
   //! Retrieve the weight window for a particle
   //! \param[in] p  Particle to get weight window for
-  WeightWindow get_weight_window(const Particle& p) const;
+  std::pair<bool, WeightWindow> get_weight_window(const Particle& p) const;
 
   std::array<int, 2> bounds_size() const;
 
@@ -234,7 +227,30 @@ public:
   double threshold_ {1.0}; //<! Relative error threshold for values used to
                            // update weight windows
   double ratio_ {5.0};     //<! ratio of lower to upper weight window bounds
+
+  // Local FW-CADIS target tallies
+  std::vector<size_t> targets_;
 };
+
+//==============================================================================
+// Non-member functions
+//==============================================================================
+
+//! Apply weight windows to a particle
+//! \param[in] p  Particle to apply weight windows to
+void apply_weight_windows(Particle& p);
+
+//! Apply weight window to a particle
+//! \param[in] p  Particle to apply weight window to
+//! \param[in] weight_window WeightWindow to apply
+void apply_weight_window(Particle& p, WeightWindow weight_window);
+
+//! Free memory associated with weight windows
+void free_memory_weight_windows();
+
+//! Search weight window that apply to a particle
+//! \param[in]  p  Particle to search weight window for
+std::pair<bool, WeightWindow> search_weight_window(const Particle& p);
 
 //! Finalize variance reduction objects after all inputs have been read
 void finalize_variance_reduction();
