@@ -362,6 +362,9 @@ class Settings:
     uniform_source_sampling : bool
         Whether to sampling among multiple sources uniformly, applying their
         strengths as weights to sampled particles.
+    unionize_material_grids : bool
+        Whether to unionize energy grids for materials and precalculate macroscopic
+        cross sections
     ufs_mesh : openmc.RegularMesh
         Mesh to be used for redistributing source sites via the uniform fission
         site (UFS) method.
@@ -498,6 +501,7 @@ class Settings:
         self._max_tracks = None
         self._max_secondaries = None
         self._use_decay_photons = None
+        self._unionize_material_grids = None
 
         self._random_ray = {}
 
@@ -1040,6 +1044,16 @@ class Settings:
         self._ifp_n_generation = ifp_n_generation
 
     @property
+    def unionize_material_grids(self) -> bool:
+        return self._unionize_material_grids
+
+    @unionize_material_grids.setter
+    def unionize_material_grids(self, unionize_mat_grids: bool):
+        if unionize_mat_grids is not None:
+            cv.check_type("unionize material energy grids", unionize_mat_grids, bool)
+        self._unionize_material_grids = unionize_mat_grids
+
+    @property
     def tabular_legendre(self) -> dict:
         return self._tabular_legendre
 
@@ -1152,6 +1166,9 @@ class Settings:
                          'energy_positron']:
                 cv.check_type('energy cutoff', cutoff[key], Real)
                 cv.check_greater_than('energy cutoff', cutoff[key], 0.0)
+            elif key == 'ue_grid':
+                cv.check_type('unionized grid thinning cutoff', cutoff[key], Real)
+                cv.check_greater_than('unionized grid thinning cutoff', cutoff[key], 0.0)
             else:
                 msg = f'Unable to set cutoff to "{key}" which is unsupported ' \
                     'by OpenMC'
@@ -1798,6 +1815,11 @@ class Settings:
             element = ET.SubElement(root, "ifp_n_generation")
             element.text = str(self._ifp_n_generation)
 
+    def _create_unionize_material_grids_subelement(self, root):
+        if self._unionize_material_grids is not None:
+            element = ET.SubElement(root, "material_ueg")
+            element.text = str(self._unionize_material_grids)
+
     def _create_tabular_legendre_subelements(self, root):
         if self.tabular_legendre:
             element = ET.SubElement(root, "tabular_legendre")
@@ -2328,6 +2350,11 @@ class Settings:
         if text is not None:
             self.ifp_n_generation = int(text)
 
+    def _unionize_material_grids_from_xml_element(self, root):
+        text = get_text(root, "material_ueg")
+        if text is not None:
+            self._unionize_material_grids = bool(text)
+
     def _tabular_legendre_from_xml_element(self, root):
         elem = root.find('tabular_legendre')
         if elem is not None:
@@ -2607,6 +2634,7 @@ class Settings:
         self._create_no_reduce_subelement(element)
         self._create_verbosity_subelement(element)
         self._create_ifp_n_generation_subelement(element)
+        self._create_unionize_material_grids_subelement(element)
         self._create_tabular_legendre_subelements(element)
         self._create_temperature_subelements(element)
         self._create_properties_file_element(element)
@@ -2726,6 +2754,7 @@ class Settings:
         settings._no_reduce_from_xml_element(elem)
         settings._verbosity_from_xml_element(elem)
         settings._ifp_n_generation_from_xml_element(elem)
+        settings._unionize_material_grids_from_xml_element(elem)
         settings._tabular_legendre_from_xml_element(elem)
         settings._temperature_from_xml_element(elem)
         settings._properties_file_from_xml_element(elem)

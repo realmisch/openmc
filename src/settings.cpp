@@ -82,6 +82,7 @@ bool uniform_source_sampling {false};
 bool ufs_on {false};
 bool urr_ptables_on {true};
 bool use_decay_photons {false};
+bool use_material_ueg {false};
 bool use_shared_secondary_bank {false};
 bool weight_windows_on {false};
 bool weight_window_checkpoint_surface {false};
@@ -759,6 +760,9 @@ void read_settings_xml(pugi::xml_node root)
     if (check_for_node(node_cutoff, "time_positron")) {
       time_cutoff[3] = std::stod(get_node_value(node_cutoff, "time_positron"));
     }
+    if (check_for_node(node_cutoff, "ue_grid")) {
+      ue_grid_cutoff = std::stod(get_node_value(node_cutoff, "ue_grid"));
+    }
   }
 
   // read properties from file
@@ -1321,6 +1325,11 @@ void read_settings_xml(pugi::xml_node root)
   if (check_for_node(root, "use_decay_photons")) {
     settings::use_decay_photons =
       get_node_value_bool(root, "use_decay_photons");
+  }
+
+  if (check_for_node(root, "material_ueg")) {
+    settings::use_material_ueg = 
+      get_node_value_bool(root, "material_ueg");
   }
 
   // If weight windows are on, also enable shared secondary bank (unless
