@@ -1,5 +1,4 @@
-#include "openmc/settings.h"
-#include "openmc/random_ray/flat_source_domain.h"
+#include "openmc/settings.h" #include "openmc/random_ray/flat_source_domain.h"
 
 #include <cmath>  // for ceil, pow
 #include <limits> // for numeric_limits
@@ -150,6 +149,7 @@ int trace_gen;
 int64_t trace_particle;
 vector<array<int, 3>> track_identifiers;
 int trigger_batch_interval {1};
+double ue_grid_cutoff {1e-10};
 int verbosity {-1};
 double weight_cutoff {0.25};
 double weight_survive {1.0};

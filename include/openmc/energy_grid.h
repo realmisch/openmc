@@ -6,6 +6,7 @@
 
 #include "openmc/settings.h"
 #include "openmc/memory.h"
+#include "openmc/particle_type.h"
 #include "openmc/vector.h"
 #include "openmc/tensor.h"
 
@@ -14,7 +15,7 @@ namespace openmc {
     vector<int> grid_index;
     vector<double> energy;
 
-    void insert_grid(const vector<double> &other);
+    void insert_grid(const vector<double> &other, const bool sort_result = false);
     
     void thin_grid(double tolerance);
     void update_dix_and_bound();

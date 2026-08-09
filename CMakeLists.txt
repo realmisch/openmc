@@ -389,6 +389,7 @@ list(APPEND libopenmc_SOURCES
   src/distribution_spatial.cpp
   src/eigenvalue.cpp
   src/endf.cpp
+  src/energy_grid.cpp
   src/error.cpp
   src/event.cpp
   src/file_utils.cpp

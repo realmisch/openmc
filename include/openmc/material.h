@@ -11,6 +11,7 @@
 
 #include "openmc/bremsstrahlung.h"
 #include "openmc/constants.h"
+#include "openmc/energy_grid.h"
 #include "openmc/memory.h" // for unique_ptr
 #include "openmc/ncrystal_interface.h"
 #include "openmc/particle.h"

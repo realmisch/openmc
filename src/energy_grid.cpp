@@ -1,15 +1,16 @@
 
 #include "openmc/energy_grid.h"
+#include "openmc/nuclide.h"
 
 namespace openmc {
-  void EnergyGrid::insert_grid(const vector<double> &other, const bool sort_result = false) {
+  void EnergyGrid::insert_grid(const vector<double> &other, const bool sort_result) {
     energy.insert(energy.end(), other.begin(), other.end());
     if (sort_result)
-      std::inplace_merge(std::execution_par_unseq,
+      std::inplace_merge(std::execution::par_unseq,
                          energy.begin(),
                          energy.begin() + (energy.size() - other.size()),
                          energy.end());
-    energy.erase(std::unique(std::execution_par_unseq, 
+    energy.erase(std::unique(std::execution::par_unseq, 
                              energy.begin(), 
                              energy.end()), 
                  energy.end());
@@ -44,10 +45,10 @@ namespace openmc {
     while (*min_it < E_min) min_it++;
     while (*max_it > E_max) max_it--;
 
-    if (max_it + 1 != grid.end())
-      grid.erase(max_it - 1, grid.end());
-    if (min_it != grid.begin())
-      grid.erase(grid.begin(), min_it + 1);
+    if (max_it + 1 != energy.end())
+      energy.erase(max_it - 1, energy.end());
+    if (min_it != energy.begin())
+      energy.erase(energy.begin(), min_it + 1);
 
     int M = settings::n_log_bins;
     auto umesh = tensor::linspace(0.0, std::log(E_max / E_min), M + 1);

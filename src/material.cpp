@@ -525,47 +525,52 @@ void Material::init_thermal()
 
 void Material::init_material_ueg()
 {
-  EnergyGrid important_point;
+  EnergyGrid important_points;
   vector<double> checked_kTs;
 
-  for (auto & nuc : nuclide_)
-    for (auto kT : nuc->kTs_)
-      if (!checked_kTs.contains(kT))
-        checked_kTs.insert(kT);
+  for (auto & i_nuclide : nuclide_) {
+    const auto & nuc = *data::nuclides[i_nuclide];
+    for (auto kT : nuc.kTs_)
+      if (std::find_if(checked_kTs.begin(), 
+                       checked_kTs.end(), 
+                       [&](double val) {return std::abs(val - kT) < 1e-10;}) == checked_kTs.end())
+        checked_kTs.push_back(kT);
+  }
   std::sort(checked_kTs.begin(), checked_kTs.end());
 
   macro_xs_.resize(checked_kTs.size());
 
-  for (auto & nuc : nuclide_) {
-    for (int t = 0; t <  nuc->kTs_.size(); t++) {
-      auto kT_idx = std::lower_bound(checked_kTs.begin(), checked_kTs.end(), nuc->kTs_[t]);
+  for (auto & i_nuclide : nuclide_) {
+    const auto & nuc = *data::nuclides[i_nuclide];
+    for (int t = 0; t <  nuc.kTs_.size(); t++) {
+      auto kT_idx = std::lower_bound(checked_kTs.begin(), checked_kTs.end(), nuc.kTs_[t]);
 
-      EnergyGrid & grid = nuc->grid_[t];
+      const EnergyGrid & grid = nuc.grid_[t];
       ue_grid_.insert_grid(grid.energy);
       
-      if (nuc->urr_present_) {
-        const auto & urr_energies = nuc->urr_data[t].energy_;
+      if (nuc.urr_present_) {
+        const auto & urr_energies = nuc.urr_data_[t].energy_;
         important_points.insert_grid(urr_energies);
       }
       
-      for (auto & rxn : nuc->reactions_) {
-        auto threshold = grid.energy[rxn->xs_[t].threshold;
-        if (threshold != 0)
-          important_points.energy.insert(grid[t].energy[threshold]);
-      }
+      for (auto & rxn : nuc.reactions_) 
+        if (rxn->xs_[t].threshold != 0) {
+          auto threshold_energy = grid.energy[rxn->xs_[t].threshold];
+          important_points.energy.push_back(threshold_energy);
+        }
     }
   }
 
-  auto & imp_grid = important_points[t].energy;
+  auto & imp_grid = important_points.energy;
 
-  ue_grid_.thin_grid(settings::ue_cutoff);
+  ue_grid_.thin_grid(settings::ue_grid_cutoff);
   ue_grid_.insert_grid(imp_grid, true);
 
   ue_grid_.update_dix_and_bound();
   
   Particle p = Particle();
   p.type() = ParticleType::neutron();
-  initialize_particle_track(p, 1);
+  initialize_particle_track(p, 1, false);
 
   vector<double> energy = ue_grid_.energy;
   for (int t = 0; t < checked_kTs.size(); ++t) { 
@@ -574,7 +579,7 @@ void Material::init_material_ueg()
 
     for (int i = 0; i < energy.size(); i++) {
       p.E() = energy[i];
-      p.kT() = checked_kTs[i]; 
+      p.sqrtkT() = std::sqrt(checked_kTs[i]); 
       this->calculate_xs(p);
 
       xs[i] = {
@@ -583,7 +588,7 @@ void Material::init_material_ueg()
         .fission = p.macro_xs().fission,
         .nu_fission = p.macro_xs().nu_fission,
         .photon_prod = p.macro_xs().photon_prod
-      }
+      };
     }
   }
 }

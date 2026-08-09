@@ -12,6 +12,7 @@
 #include "openmc/array.h"
 #include "openmc/constants.h"
 #include "openmc/endf.h"
+#include "openmc/energy_grid.h"
 #include "openmc/memory.h" // for unique_ptr
 #include "openmc/particle.h"
 #include "openmc/reaction.h"
@@ -32,10 +33,6 @@ public:
   //============================================================================
   // Types, aliases
   using EmissionMode = ReactionProduct::EmissionMode;
-  struct EnergyGrid {
-    vector<int> grid_index;
-    vector<double> energy;
-  };
 
   //============================================================================
   // Constructors/destructors
