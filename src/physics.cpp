@@ -541,6 +541,8 @@ int sample_nuclide(Particle& p)
     double atom_density = mat->atom_density(i, p.density_mult());
 
     // Increment probability to compare to cutoff
+    if (settings::use_material_ueg)
+      p.update_neutron_xs(i_nuclide);
     prob += atom_density * p.neutron_xs(i_nuclide).total;
     if (prob >= cutoff)
       return i_nuclide;
