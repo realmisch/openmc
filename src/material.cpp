@@ -526,24 +526,23 @@ void Material::init_thermal()
 void Material::init_material_ueg()
 {
   EnergyGrid important_points;
-  vector<double> checked_kTs;
 
   for (auto & i_nuclide : nuclide_) {
     const auto & nuc = *data::nuclides[i_nuclide];
     for (auto kT : nuc.kTs_)
-      if (std::find_if(checked_kTs.begin(), 
-                       checked_kTs.end(), 
-                       [&](double val) {return std::abs(val - kT) < 1e-10;}) == checked_kTs.end())
-        checked_kTs.push_back(kT);
+      if (std::find_if(kTs_.begin(), 
+                       kTs_.end(), 
+                       [&](double val) {return std::abs(val - kT) < 1e-10;}) == kTs_.end())
+        kTs_.push_back(kT);
   }
-  std::sort(checked_kTs.begin(), checked_kTs.end());
+  std::sort(kTs_.begin(), kTs_.end());
 
-  macro_xs_.resize(checked_kTs.size());
+  macro_xs_.resize(kTs_.size());
 
   for (auto & i_nuclide : nuclide_) {
     const auto & nuc = *data::nuclides[i_nuclide];
     for (int t = 0; t <  nuc.kTs_.size(); t++) {
-      auto kT_idx = std::lower_bound(checked_kTs.begin(), checked_kTs.end(), nuc.kTs_[t]);
+      auto kT_idx = std::lower_bound(kTs_.begin(), kTs.end(), nuc.kTs_[t]);
 
       const EnergyGrid & grid = nuc.grid_[t];
       ue_grid_.insert_grid(grid.energy);
@@ -573,13 +572,13 @@ void Material::init_material_ueg()
   initialize_particle_track(p, 1, false);
 
   vector<double> energy = ue_grid_.energy;
-  for (int t = 0; t < checked_kTs.size(); ++t) { 
+  for (int t = 0; t < kTs_.size(); ++t) { 
     vector<MacroXS> & xs = macro_xs_[t];
     xs.resize(energy.size());
 
     for (int i = 0; i < energy.size(); i++) {
       p.E() = energy[i];
-      p.sqrtkT() = std::sqrt(checked_kTs[i]); 
+      p.sqrtkT() = std::sqrt(kTs_[i]); 
       this->calculate_xs(p);
 
       xs[i] = {
@@ -591,6 +590,74 @@ void Material::init_material_ueg()
       };
     }
   }
+}
+
+void Material::calculate_neutron_macro_xs(Particle &p) {
+  double kT = p.sqrtkT() * p.sqrtkT();
+  double f;
+  int i_temp = -1;
+
+  switch (settings::temperature_method) {
+    case TemperatureMethod::NEAREST:
+      double max_diff = INFTY;
+      for (int t = 0; t < kTs_.size(); ++t) {
+        double diff = std::abs(kTs_[t] - kT);
+        if (diff < max_diff) {
+          i_temp = t;
+          max_diff = diff;
+        }
+      }
+      break;
+    case TemperatureMethod::INTERPOLATION:
+      if (kT < kTs_.front()) {
+        i_temp = 0;
+        break;
+      }
+      if (kT > kTs_.back()) {
+        i_temp = kTs_.size() - 1;
+        break;
+      }
+
+      for (i_temp = 0; i_temp < kTs_.size() - 1; ++i_temp) {
+        if (kTs_[i_temp] <= kT && kT < kTs_[i_temp + 1])
+          break;
+      }
+
+      f = (kT - kTs_[i_temp]) / (kTs_[i_temp + 1] - kTs[i_temp]);
+      if (f > prn(p.current_seed()))
+        ++i_temp;
+      break;
+  }
+  
+  const auto & grid { ue_grid_[t] };
+
+  int i_grid;
+  if (p.E() < grid.energy.front()) {
+    i_grid = 0;
+  } else if (p.E() > grid.energy.back()) {
+    i_grid = grid.energy.size() - 2;
+  } else {
+    int i_low = grid.grid_index[i_log_union];
+    int i_high = grid.grid_index[i_log_union + 1] + 1;
+
+    i_grid = i_low + lower_bound_index(
+                        &grid.energy[i_low], &grid.energy[i_high], p.E());
+  }
+
+  if (grid.energy[i_grid] == grid.energy[i_grid + 1])
+    ++i_grid;
+
+  f = (p.E() - grid.energy[i_grid]) / 
+      (grid.energy[i_grid + 1] - grid.energy[i_grid]);
+
+  const auto & xs_l { macro_xs[i_temp][i_grid] };
+  const auto & xs_h { macro_xs[i_temp][i_grid + 1] };
+
+  p.macro_xs().total = (1.0 - f) * xs_l.total + f * xs_h.total;
+  p.macro_xs().absorption = (1.0 - f) * xs_l.absorption + f * xs_h.absorption;
+  p.macro_xs().fission = (1.0 - f) * xs_l.fission + f * xs_h.fission;
+  p.macro_xs().nu_fission = (1.0 - f) * xs_l.nu_fission + f * xs_h.nu_fission;
+  p.macro_xs().photon_prod = (1.0 - f) * xs_l.photon_prod + f * xs_h.photon_prod;
 }
 
 void Material::collision_stopping_power(double* s_col, bool positron)
@@ -914,58 +981,62 @@ void Material::calculate_neutron_xs(Particle& p) const
     ncrystal_xs = ncrystal_mat_.xs(p);
   }
 
-  // Add contribution from each nuclide in material
-  for (int i = 0; i < nuclide_.size(); ++i) {
-    // ======================================================================
-    // CHECK FOR S(A,B) TABLE
+  if (settings::use_material_ueg) {
+    this->calculate_neutron_macro_xs(p);
+  } else {
+    // Add contribution from each nuclide in material
+    for (int i = 0; i < nuclide_.size(); ++i) {
+      // ======================================================================
+      // CHECK FOR S(A,B) TABLE
 
-    int i_sab = C_NONE;
-    double sab_frac = 0.0;
+      int i_sab = C_NONE;
+      double sab_frac = 0.0;
 
-    // Check if this nuclide matches one of the S(a,b) tables specified.
-    // This relies on thermal_tables_ being sorted by .index_nuclide
-    if (check_sab) {
-      const auto& sab {thermal_tables_[j]};
-      if (i == sab.index_nuclide) {
-        // Get index in sab_tables
-        i_sab = sab.index_table;
-        sab_frac = sab.fraction;
+      // Check if this nuclide matches one of the S(a,b) tables specified.
+      // This relies on thermal_tables_ being sorted by .index_nuclide
+      if (check_sab) {
+        const auto& sab {thermal_tables_[j]};
+        if (i == sab.index_nuclide) {
+          // Get index in sab_tables
+          i_sab = sab.index_table;
+          sab_frac = sab.fraction;
 
-        // If particle energy is greater than the highest energy for the
-        // S(a,b) table, then don't use the S(a,b) table
-        if (p.E() > data::thermal_scatt[i_sab]->energy_max_)
-          i_sab = C_NONE;
+          // If particle energy is greater than the highest energy for the
+          // S(a,b) table, then don't use the S(a,b) table
+          if (p.E() > data::thermal_scatt[i_sab]->energy_max_)
+            i_sab = C_NONE;
 
-        // Increment position in thermal_tables_
-        ++j;
+          // Increment position in thermal_tables_
+          ++j;
 
-        // Don't check for S(a,b) tables if there are no more left
-        if (j == thermal_tables_.size())
-          check_sab = false;
+          // Don't check for S(a,b) tables if there are no more left
+          if (j == thermal_tables_.size())
+            check_sab = false;
+        }
       }
+
+      // ======================================================================
+      // CALCULATE MICROSCOPIC CROSS SECTION
+
+      // Get nuclide index
+      int i_nuclide = nuclide_[i];
+
+      // Update microscopic cross section for this nuclide
+      p.update_neutron_xs(i_nuclide, i_grid, i_sab, sab_frac, ncrystal_xs);
+      auto& micro = p.neutron_xs(i_nuclide);
+
+      // ======================================================================
+      // ADD TO MACROSCOPIC CROSS SECTION
+
+      // Copy atom density of nuclide in material
+      double atom_density = this->atom_density(i, p.density_mult());
+
+      // Add contributions to cross sections
+      p.macro_xs().total += atom_density * micro.total;
+      p.macro_xs().absorption += atom_density * micro.absorption;
+      p.macro_xs().fission += atom_density * micro.fission;
+      p.macro_xs().nu_fission += atom_density * micro.nu_fission;
     }
-
-    // ======================================================================
-    // CALCULATE MICROSCOPIC CROSS SECTION
-
-    // Get nuclide index
-    int i_nuclide = nuclide_[i];
-
-    // Update microscopic cross section for this nuclide
-    p.update_neutron_xs(i_nuclide, i_grid, i_sab, sab_frac, ncrystal_xs);
-    auto& micro = p.neutron_xs(i_nuclide);
-
-    // ======================================================================
-    // ADD TO MACROSCOPIC CROSS SECTION
-
-    // Copy atom density of nuclide in material
-    double atom_density = this->atom_density(i, p.density_mult());
-
-    // Add contributions to cross sections
-    p.macro_xs().total += atom_density * micro.total;
-    p.macro_xs().absorption += atom_density * micro.absorption;
-    p.macro_xs().fission += atom_density * micro.fission;
-    p.macro_xs().nu_fission += atom_density * micro.nu_fission;
   }
 }
 
