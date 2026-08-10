@@ -209,7 +209,8 @@ public:
 
   // Unionized energy grid and macroscopic cross sections
   EnergyGrid ue_grid_;
-  vector<vector<MacroXS>> macro_xs_; 
+  vector<vector<MacroXS>> macro_xs_;
+  vector<double> kTs_;
 
   // Thermal scattering tables
   vector<ThermalTable> thermal_tables_;
@@ -230,6 +231,7 @@ private:
   void normalize_density();
 
   void calculate_neutron_xs(Particle& p) const;
+  void calculate_neutron_macro_xs(Particle& p) const;
   void calculate_photon_xs(Particle& p) const;
 
   //----------------------------------------------------------------------------

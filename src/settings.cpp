@@ -1,4 +1,5 @@
-#include "openmc/settings.h" #include "openmc/random_ray/flat_source_domain.h"
+#include "openmc/settings.h" 
+#include "openmc/random_ray/flat_source_domain.h"
 
 #include <cmath>  // for ceil, pow
 #include <limits> // for numeric_limits

@@ -542,7 +542,7 @@ void Material::init_material_ueg()
   for (auto & i_nuclide : nuclide_) {
     const auto & nuc = *data::nuclides[i_nuclide];
     for (int t = 0; t <  nuc.kTs_.size(); t++) {
-      auto kT_idx = std::lower_bound(kTs_.begin(), kTs.end(), nuc.kTs_[t]);
+      auto kT_idx = std::lower_bound(kTs_.begin(), kTs_.end(), nuc.kTs_[t]);
 
       const EnergyGrid & grid = nuc.grid_[t];
       ue_grid_.insert_grid(grid.energy);
@@ -592,13 +592,17 @@ void Material::init_material_ueg()
   }
 }
 
-void Material::calculate_neutron_macro_xs(Particle &p) {
+void Material::calculate_neutron_macro_xs(Particle &p) const {
   double kT = p.sqrtkT() * p.sqrtkT();
   double f;
   int i_temp = -1;
+  int neutron = ParticleType::neutron().transport_index(); 
+
+  int i_log_union = 
+    std::log(p.E() / (data::energy_min[neutron] * simulation::log_spacing));
 
   switch (settings::temperature_method) {
-    case TemperatureMethod::NEAREST:
+    case TemperatureMethod::NEAREST: {
       double max_diff = INFTY;
       for (int t = 0; t < kTs_.size(); ++t) {
         double diff = std::abs(kTs_[t] - kT);
@@ -607,7 +611,7 @@ void Material::calculate_neutron_macro_xs(Particle &p) {
           max_diff = diff;
         }
       }
-      break;
+    } break;
     case TemperatureMethod::INTERPOLATION:
       if (kT < kTs_.front()) {
         i_temp = 0;
@@ -623,35 +627,33 @@ void Material::calculate_neutron_macro_xs(Particle &p) {
           break;
       }
 
-      f = (kT - kTs_[i_temp]) / (kTs_[i_temp + 1] - kTs[i_temp]);
+      f = (kT - kTs_[i_temp]) / (kTs_[i_temp + 1] - kTs_[i_temp]);
       if (f > prn(p.current_seed()))
         ++i_temp;
       break;
   }
   
-  const auto & grid { ue_grid_[t] };
-
   int i_grid;
-  if (p.E() < grid.energy.front()) {
+  if (p.E() < ue_grid_.energy.front()) {
     i_grid = 0;
-  } else if (p.E() > grid.energy.back()) {
-    i_grid = grid.energy.size() - 2;
+  } else if (p.E() > ue_grid_.energy.back()) {
+    i_grid = ue_grid_.energy.size() - 2;
   } else {
-    int i_low = grid.grid_index[i_log_union];
-    int i_high = grid.grid_index[i_log_union + 1] + 1;
+    int i_low = ue_grid_.grid_index[i_log_union];
+    int i_high = ue_grid_.grid_index[i_log_union + 1] + 1;
 
     i_grid = i_low + lower_bound_index(
-                        &grid.energy[i_low], &grid.energy[i_high], p.E());
+                        &ue_grid_.energy[i_low], &ue_grid_.energy[i_high], p.E());
   }
 
-  if (grid.energy[i_grid] == grid.energy[i_grid + 1])
+  if (ue_grid_.energy[i_grid] == ue_grid_.energy[i_grid + 1])
     ++i_grid;
 
-  f = (p.E() - grid.energy[i_grid]) / 
-      (grid.energy[i_grid + 1] - grid.energy[i_grid]);
+  f = (p.E() - ue_grid_.energy[i_grid]) / 
+      (ue_grid_.energy[i_grid + 1] - ue_grid_.energy[i_grid]);
 
-  const auto & xs_l { macro_xs[i_temp][i_grid] };
-  const auto & xs_h { macro_xs[i_temp][i_grid + 1] };
+  const auto & xs_l { macro_xs_[i_temp][i_grid] };
+  const auto & xs_h { macro_xs_[i_temp][i_grid + 1] };
 
   p.macro_xs().total = (1.0 - f) * xs_l.total + f * xs_h.total;
   p.macro_xs().absorption = (1.0 - f) * xs_l.absorption + f * xs_h.absorption;
