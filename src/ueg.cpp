@@ -68,11 +68,12 @@ namespace openmc {
 
     ueg.erase(ueg.begin(), min_it + 1);
     ueg.erase(max_it - 1, ueg.end());
-  ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
+    ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
+    std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
 
     double mem_size = (double)(ueg.size()*num_temps*data::nuclides.size()) * 12.0 / 1073741824.0;
     if (mem_size > 10)
-      warning(fmt::format("{} GB required for UEG", mem_size));
+      warning(fmt::format("{} GB required for Unionized Energy Grid cross sections", mem_size));
 
     //Generate logarithmic bin indices for double indexing
     //Identical algorithm to Nuclide::init_grid
@@ -92,6 +93,7 @@ namespace openmc {
       }
       ueg_index[k] = j;
     }
+    write_message("Unionized Energy Grid contains {} grid points", ueg.size());
     create_union_energy_xs();
     data::use_ueg = true;
   }

@@ -14,19 +14,6 @@ namespace openmc {
       extern bool use_ueg;
       extern std::shared_ptr<EnergyGrid> union_e_grid;
     } //namespace data
-
-  template<typename T>
-  struct GridVector : vector<T> {
-    T& operator [](int index) {
-      if (data::use_ueg) return *data::union_e_grid;
-      return this->data()[index];
-    }
-
-    const T& operator[](int index) const {
-      if (data::use_ueg) return *data::union_e_grid;
-      return this->data()[index];  
-    }
-  };
 } //namespace openmc
 
 #endif //OPENMC_ENERGY_GRID_H

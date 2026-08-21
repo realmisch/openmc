@@ -851,7 +851,7 @@ void Nuclide::calculate_xs(
     // reduce the energy range over which a binary search needs to be
     // performed
 
-    const auto& grid {grid_[i_temp]};
+    const auto& grid = data::use_ueg ? *data::union_e_grid : grid_[i_temp];
     const auto& xs {xs_[i_temp]};
 
     int i_grid;

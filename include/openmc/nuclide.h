@@ -97,7 +97,7 @@ public:
 
   // Temperature dependent cross section data
   vector<double> kTs_;                //!< temperatures in eV (k*T)
-  GridVector<EnergyGrid> grid_;           //!< Energy grid at each temperature
+  vector<EnergyGrid> grid_;           //!< Energy grid at each temperature
   vector<tensor::Tensor<double>> xs_; //!< Cross sections at each temperature
 
   // Multipole data
