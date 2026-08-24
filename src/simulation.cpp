@@ -116,6 +116,8 @@ int openmc_simulation_init()
   // Set up material nuclide index mapping
   for (auto& mat : model::materials) {
     mat->init_nuclide_index();
+    if (settings::use_material_ueg)
+      mat->init_material_ueg();
   }
 
   // Reset global variables -- this is done before loading state point (as that
