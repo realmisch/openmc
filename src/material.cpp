@@ -572,13 +572,14 @@ void Material::init_material_ueg()
   initialize_particle_track(p, 1, false);
 
   vector<double> energy = ue_grid_.energy;
+  settings::use_material_ueg = false;
   for (int t = 0; t < kTs_.size(); ++t) { 
     vector<MacroXS> & xs = macro_xs_[t];
     xs.resize(energy.size());
 
     for (int i = 0; i < energy.size(); i++) {
       p.E() = energy[i];
-      p.sqrtkT() = std::sqrt(kTs_[i]); 
+      p.sqrtkT() = std::sqrt(kTs_[t]); 
       this->calculate_xs(p);
 
       xs[i] = {
@@ -590,6 +591,7 @@ void Material::init_material_ueg()
       };
     }
   }
+  settings::use_material_ueg = true;
 }
 
 void Material::calculate_neutron_macro_xs(Particle &p) const {
