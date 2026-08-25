@@ -2,6 +2,7 @@
 
 #include "openmc/array.h"
 #include "openmc/capi.h"
+#include "openmc/cell.h"
 #include "openmc/constants.h"
 #include "openmc/container_util.h"
 #include "openmc/error.h"
@@ -62,7 +63,7 @@ vector<int> active_collision_tallies;
 vector<int> active_meshsurf_tallies;
 vector<int> active_surface_tallies;
 vector<int> active_pulse_height_tallies;
-vector<int> pulse_height_cells;
+vector<int32_t> pulse_height_cells;
 vector<double> time_grid;
 } // namespace model
 
@@ -511,7 +512,7 @@ void Tally::set_strides()
   // longest stride.
   auto n = filters_.size();
   strides_.resize(n, 0);
-  int stride = 1;
+  int64_t stride = 1;
   for (int i = n - 1; i >= 0; --i) {
     strides_[i] = stride;
     stride *= model::tally_filters[filters_[i]]->n_bins();
@@ -539,6 +540,8 @@ void Tally::set_scores(const vector<std::string>& scores)
   bool legendre_present = false;
   bool cell_present = false;
   bool cellfrom_present = false;
+  bool material_present = false;
+  bool materialfrom_present = false;
   bool surface_present = false;
   bool meshsurface_present = false;
   bool non_cell_energy_present = false;
@@ -555,12 +558,21 @@ void Tally::set_scores(const vector<std::string>& scores)
       cellfrom_present = true;
     } else if (filt->type() == FilterType::CELL) {
       cell_present = true;
+    } else if (filt->type() == FilterType::MATERIALFROM) {
+      materialfrom_present = true;
+    } else if (filt->type() == FilterType::MATERIAL) {
+      material_present = true;
     } else if (filt->type() == FilterType::SURFACE) {
       surface_present = true;
     } else if (filt->type() == FilterType::MESH_SURFACE) {
       meshsurface_present = true;
     }
   }
+  bool surface_types_present =
+    (surface_present || cellfrom_present || materialfrom_present);
+  bool non_meshsurface_types_present =
+    (surface_present || cell_present || cellfrom_present || material_present ||
+      materialfrom_present);
 
   // Iterate over the given scores.
   for (auto score_str : scores) {
@@ -582,6 +594,12 @@ void Tally::set_scores(const vector<std::string>& scores)
           fatal_error("Cannot tally flux for an individual nuclide.");
       if (energyout_present)
         fatal_error("Cannot tally flux with an outgoing energy filter.");
+      if (surface_types_present) {
+        if (meshsurface_present)
+          fatal_error("OpenMC does not support mesh surface fluxes yet");
+        type_ = TallyType::SURFACE;
+        estimator_ = TallyEstimator::ANALOG;
+      }
       break;
 
     case SCORE_TOTAL:
@@ -614,47 +632,56 @@ void Tally::set_scores(const vector<std::string>& scores)
 
     case SCORE_CURRENT:
       // Check which type of current is desired: mesh or surface currents.
-      if (surface_present || cell_present || cellfrom_present) {
-        if (meshsurface_present)
+      if (meshsurface_present) {
+        if (non_meshsurface_types_present)
           fatal_error("Cannot tally mesh surface currents in the same tally as "
                       "normal surface currents");
-        type_ = TallyType::SURFACE;
-        estimator_ = TallyEstimator::ANALOG;
-      } else if (meshsurface_present) {
         type_ = TallyType::MESH_SURFACE;
       } else {
-        fatal_error("Cannot tally currents without surface type filters");
+        type_ = TallyType::SURFACE;
+        estimator_ = TallyEstimator::ANALOG;
       }
       break;
 
     case HEATING:
-      if (settings::photon_transport)
-        estimator_ = TallyEstimator::COLLISION;
+      if (settings::photon_transport) {
+        // Photon heating requires a collision estimator (analog energy
+        // balance). However, if the tally only scores neutrons, we can keep the
+        // tracklength estimator since neutron heating uses kerma coefficients
+        // that support tracklength scoring.
+        bool neutron_only = false;
+        for (auto i_filt : filters_) {
+          auto pf =
+            dynamic_cast<ParticleFilter*>(model::tally_filters[i_filt].get());
+          if (pf && pf->particles().size() == 1 &&
+              pf->particles()[0].is_neutron()) {
+            neutron_only = true;
+            break;
+          }
+        }
+        if (!neutron_only)
+          estimator_ = TallyEstimator::COLLISION;
+      }
       break;
 
-    case SCORE_PULSE_HEIGHT:
+    case SCORE_PULSE_HEIGHT: {
       if (non_cell_energy_present) {
         fatal_error("Pulse-height tallies are not compatible with filters "
                     "other than CellFilter and EnergyFilter");
       }
       type_ = TallyType::PULSE_HEIGHT;
-
-      // Collecting indices of all cells covered by the filters in the pulse
-      // height tally in global variable pulse_height_cells
-      for (const auto& i_filt : filters_) {
-        auto cell_filter =
-          dynamic_cast<CellFilter*>(model::tally_filters[i_filt].get());
-        if (cell_filter) {
-          const auto& cells = cell_filter->cells();
-          for (int i = 0; i < cell_filter->n_bins(); i++) {
-            int cell_index = cells[i];
-            if (!contains(model::pulse_height_cells, cell_index)) {
-              model::pulse_height_cells.push_back(cell_index);
-            }
-          }
-        }
+      // Collect all unique cell indices covered by this tally.
+      // If no CellFilter is present, all cells in the geometry are scored.
+      const auto* cell_filter_ptr = get_filter<CellFilter>();
+      int n = cell_filter_ptr ? cell_filter_ptr->n_bins()
+                              : static_cast<int>(model::cells.size());
+      for (int i = 0; i < n; ++i) {
+        int32_t cell_index = cell_filter_ptr ? cell_filter_ptr->cells()[i] : i;
+        if (!contains(model::pulse_height_cells, cell_index))
+          model::pulse_height_cells.push_back(cell_index);
       }
       break;
+    }
 
     case SCORE_IFP_TIME_NUM:
     case SCORE_IFP_BETA_NUM:
@@ -685,15 +712,20 @@ void Tally::set_scores(const vector<std::string>& scores)
                     "in multi-group mode");
   }
 
-  // Make sure current scores are not mixed in with volumetric scores.
-  if (type_ == TallyType::SURFACE || type_ == TallyType::MESH_SURFACE) {
-    if (scores_.size() != 1)
-      fatal_error("Cannot tally other scores in the same tally as surface "
-                  "currents.");
+  // Make sure mesh surface tallies contain only current score.
+  if (meshsurface_present) {
+    if ((scores_[0] != SCORE_CURRENT) || (scores_.size() > 1))
+      fatal_error("Cannot tally score other than 'current' when using a "
+                  "mesh-surface filter.");
   }
-  if ((surface_present || meshsurface_present) && scores_[0] != SCORE_CURRENT)
-    fatal_error("Cannot tally score other than 'current' when using a surface "
-                "or mesh-surface filter.");
+
+  // Make sure surface tallies contain only surface type scores score.
+  if (type_ == TallyType::SURFACE) {
+    for (auto sc : scores_)
+      if ((sc != SCORE_CURRENT) && (sc != SCORE_FLUX))
+        fatal_error("Cannot tally scores other than 'current' or 'flux' "
+                    "when using surface filters.");
+  }
 }
 
 void Tally::set_nuclides(pugi::xml_node node)
@@ -724,7 +756,7 @@ void Tally::set_nuclides(const vector<std::string>& nuclides)
       if (search == data::nuclide_map.end()) {
         int err = openmc_load_nuclide(nuc.c_str(), nullptr, 0);
         if (err < 0)
-          throw std::runtime_error {openmc_err_msg};
+          throw std::runtime_error {get_errmsg()};
       }
       nuclides_.push_back(data::nuclide_map.at(nuc));
     }
@@ -855,7 +887,7 @@ void Tally::accumulate()
     if (higher_moments_) {
 #pragma omp parallel for
       // filter bins (specific cell, energy bins)
-      for (int i = 0; i < results_.shape(0); ++i) {
+      for (int64_t i = 0; i < results_.shape(0); ++i) {
         // score bins (flux, total reaction rate, fission reaction rate, etc.)
         for (int j = 0; j < results_.shape(1); ++j) {
           double val = results_(i, j, TallyResult::VALUE) * norm;
@@ -870,7 +902,7 @@ void Tally::accumulate()
     } else {
 #pragma omp parallel for
       // filter bins (specific cell, energy bins)
-      for (int i = 0; i < results_.shape(0); ++i) {
+      for (int64_t i = 0; i < results_.shape(0); ++i) {
         // score bins (flux, total reaction rate, fission reaction rate, etc.)
         for (int j = 0; j < results_.shape(1); ++j) {
           double val = results_(i, j, TallyResult::VALUE) * norm;
@@ -1018,8 +1050,8 @@ void reduce_tally_results()
       tensor::Tensor<double> values_reduced(values.shape());
 
       // Reduce contiguous set of tally results
-      MPI_Reduce(values.data(), values_reduced.data(), values.size(),
-        MPI_DOUBLE, MPI_SUM, 0, mpi::intracomm);
+      mpi::reduce(values.data(), values_reduced.data(), values.size(), MPI_SUM,
+        0, mpi::intracomm);
 
       // Transfer values on master and reset on other ranks
       if (mpi::master) {
@@ -1478,7 +1510,6 @@ extern "C" int openmc_tally_set_nuclides(
       if (search == data::nuclide_map.end()) {
         int err = openmc_load_nuclide(word.c_str(), nullptr, 0);
         if (err < 0) {
-          set_errmsg(openmc_err_msg);
           return OPENMC_E_DATA;
         }
       }

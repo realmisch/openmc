@@ -31,8 +31,11 @@ class _SourceSite(Structure):
                 ('particle', c_int32),
                 ('parent_nuclide', c_int),
                 ('parent_id', c_int64),
-                ('progeny_id', c_int64)]
-
+                ('progeny_id', c_int64),
+                ('wgt_born', c_double),
+                ('wgt_ww_born', c_double),
+                ('n_split', c_int64),
+                ('n_collision', c_int)]
 
 # Define input type for numpy arrays that will be passed into C++ functions
 # Must be an int or double array, with single dimension that is contiguous
@@ -483,6 +486,8 @@ def run(output=True):
 def run_random_ray(output=True):
     """Run a random ray simulation
 
+    .. versionadded:: 0.16.0
+
     Parameters
     ----------
     output : bool, optional
@@ -494,8 +499,9 @@ def run_random_ray(output=True):
 
 def sample_external_source(
         n_samples: int = 1000,
-        prn_seed: int | None = None
-) -> openmc.ParticleList:
+        prn_seed: int | None = None,
+        as_array: bool = False
+) -> openmc.ParticleList | np.ndarray:
     """Sample external source and return source particles.
 
     .. versionadded:: 0.13.1
@@ -507,11 +513,20 @@ def sample_external_source(
     prn_seed : int
         Pseudorandom number generator (PRNG) seed; if None, one will be
         generated randomly.
+    as_array : bool
+        If True, return a numpy structured array instead of a
+        :class:`~openmc.ParticleList`.  The array has fields ``'r'`` (float64,
+        shape 3), ``'u'`` (float64, shape 3), ``'E'`` (float64), ``'time'``
+        (float64), ``'wgt'`` (float64), ``'delayed_group'`` (int32),
+        ``'surf_id'`` (int32), and ``'particle'`` (int32).  This avoids the
+        overhead of constructing individual :class:`~openmc.SourceParticle`
+        objects and is substantially faster for large sample counts.
 
     Returns
     -------
-    openmc.ParticleList
-        List of sampled source particles
+    openmc.ParticleList or numpy.ndarray
+        List of sampled source particles, or a structured array when
+        *as_array* is True.
 
     """
     if n_samples <= 0:
@@ -519,18 +534,28 @@ def sample_external_source(
     if prn_seed is None:
         prn_seed = getrandbits(63)
 
-    # Call into C API to sample source
-    sites_array = (_SourceSite * n_samples)()
-    _dll.openmc_sample_external_source(c_size_t(n_samples), c_uint64(prn_seed), sites_array)
+    # Pre-allocate output array and sample all particles in a single C call
+    result = np.empty(n_samples, dtype=_SourceSite)
+    sites_array = (_SourceSite * n_samples).from_buffer(result)
+    _dll.openmc_sample_external_source(
+        c_size_t(n_samples),
+        c_uint64(prn_seed),
+        sites_array,
+    )
 
-    # Convert to list of SourceParticle and return
-    return openmc.ParticleList([openmc.SourceParticle(
-            r=site.r, u=site.u, E=site.E, time=site.time, wgt=site.wgt,
-            delayed_group=site.delayed_group, surf_id=site.surf_id,
-            particle=openmc.ParticleType(site.particle)
+    if as_array:
+        return result
+
+    particles = [
+        openmc.SourceParticle(
+            r=site.r, u=site.u, E=site.E, time=site.time,
+            wgt=site.wgt, delayed_group=site.delayed_group,
+            surf_id=site.surf_id,
+            particle=openmc.ParticleType(site.particle),
         )
         for site in sites_array
-    ])
+    ]
+    return openmc.ParticleList(particles)
 
 
 def simulation_init():
@@ -674,8 +699,8 @@ class TemporarySession:
         self.model = model
 
         # Determine MPI intercommunicator
-        self.init_kwargs.setdefault('intracomm', comm)
-        self.comm = self.init_kwargs['intracomm']
+        self.comm = self.init_kwargs.get('intracomm') or comm
+        self.init_kwargs['intracomm'] = self.comm
 
     def __enter__(self):
         """Initialize the OpenMC library in a temporary directory."""

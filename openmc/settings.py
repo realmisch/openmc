@@ -15,7 +15,7 @@ from openmc.stats.multivariate import MeshSpatial
 from ._xml import clean_indentation, get_elem_list, get_text
 from .mesh import _read_meshes, RegularMesh, MeshBase
 from .source import SourceBase, MeshSource, IndependentSource
-from .utility_funcs import input_path
+from .utility_funcs import input_path, set_xml_input_path
 from .volume import VolumeCalculation
 from .weight_windows import WeightWindows, WeightWindowGenerator, WeightWindowsList
 
@@ -41,6 +41,10 @@ class Settings:
 
     Attributes
     ----------
+    atomic_relaxation : bool
+        Whether to simulate the atomic relaxation cascade (fluorescence photons
+        and Auger electrons) following photoelectric and incoherent scattering
+        interactions.
     batches : int
         Number of batches to simulate
     confidence_intervals : bool
@@ -63,6 +67,10 @@ class Settings:
                     (ex: ["(n,fission)", 2, "(n,2n)"] ). (list of str or int)
         :deposited_E_threshold: Number to define the minimum deposited energy during
                      per collision to trigger banking. (float)
+    create_delayed_neutrons : bool
+        Whether delayed neutrons are created in fission.
+
+        .. versionadded:: 0.13.3
     create_fission_neutrons : bool
         Indicate whether fission neutrons should be created or not.
     cutoff : dict
@@ -179,6 +187,9 @@ class Settings:
        Initial seed for randomly generated plot colors.
     ptables : bool
         Determine whether probability tables are used.
+    properties_file : PathLike
+        Location of the properties file to load cell temperatures/densities
+        and material densities
     random_ray : dict
         Options for configuring the random ray solver. Acceptable keys are:
 
@@ -229,6 +240,9 @@ class Settings:
             stabilization, which may be desirable as stronger diagonal stabilization
             also tends to dampen the convergence rate of the solver, thus requiring
             more iterations to converge.
+        :adjoint_source:
+            Source object used to define localized adjoint source/detector response
+            function.
 
         .. versionadded:: 0.15.0
     resonance_scattering : dict
@@ -246,8 +260,15 @@ class Settings:
         The type of calculation to perform (default is 'eigenvalue')
     seed : int
         Seed for the linear congruential pseudorandom number generator
-    stride : int
-        Number of random numbers allocated for each source particle history
+    shared_secondary_bank : bool
+        Whether to use a shared secondary particle bank. When enabled,
+        secondary particles are collected into a global bank, sorted for
+        reproducibility, and load-balanced across MPI ranks between
+        generations. If not specified, the shared secondary bank is
+        enabled automatically for fixed-source simulations with weight
+        windows active, and disabled otherwise.
+
+        .. versionadded:: 0.16.0
     source : Iterable of openmc.SourceBase
         Distribution of source sites in space, angle, and energy
     source_rejection_fraction : float
@@ -267,6 +288,8 @@ class Settings:
         Options for writing state points. Acceptable keys are:
 
         :batches: list of batches at which to write statepoint files
+    stride : int
+        Number of random numbers allocated for each source particle history
     surf_source_read : dict
         Options for reading surface source points. Acceptable keys are:
 
@@ -289,6 +312,14 @@ class Settings:
         :cellto: Cell ID used to determine if particles crossing identified
                  surfaces are to be banked. Particles going to this declared
                  cell will be banked (int)
+    surface_grazing_cutoff : float
+        Surface flux cosine cutoff. If not specified, the default value is
+        0.001. For more information, see the surface tally section in the theory
+        manual.
+    surface_grazing_ratio : float
+        Surface flux cosine substitution ratio. If not specified, the default
+        value is 0.5. For more information, see the surface tally section in the
+        theory manual.
     survival_biasing : bool
         Indicate whether survival biasing is to be used
     tabular_legendre : dict
@@ -358,10 +389,6 @@ class Settings:
 
         .. versionadded:: 0.14.0
 
-    create_delayed_neutrons : bool
-        Whether delayed neutrons are created in fission.
-
-        .. versionadded:: 0.13.3
     weight_windows_on : bool
         Whether weight windows are enabled
 
@@ -397,11 +424,15 @@ class Settings:
         self._confidence_intervals = None
         self._electron_treatment = None
         self._photon_transport = None
+        self._atomic_relaxation = None
         self._plot_seed = None
         self._ptables = None
+        self._properties_file = None
         self._uniform_source_sampling = None
         self._seed = None
         self._stride = None
+        self._surface_grazing_cutoff = None
+        self._surface_grazing_ratio = None
         self._survival_biasing = None
         self._free_gas_threshold = None
 
@@ -465,6 +496,7 @@ class Settings:
         self._weight_window_generators = cv.CheckedList(
             WeightWindowGenerator, 'weight window generators')
         self._weight_windows_on = None
+        self._shared_secondary_bank = None
         self._weight_windows_file = None
         self._weight_window_checkpoints = {}
         self._max_history_splits = None
@@ -659,6 +691,15 @@ class Settings:
         self._electron_treatment = electron_treatment
 
     @property
+    def atomic_relaxation(self) -> bool:
+        return self._atomic_relaxation
+
+    @atomic_relaxation.setter
+    def atomic_relaxation(self, atomic_relaxation: bool):
+        cv.check_type('atomic relaxation', atomic_relaxation, bool)
+        self._atomic_relaxation = atomic_relaxation
+
+    @property
     def ptables(self) -> bool:
         return self._ptables
 
@@ -714,6 +755,27 @@ class Settings:
         cv.check_type('random number generator stride', stride, Integral)
         cv.check_greater_than('random number generator stride', stride, 0)
         self._stride = stride
+
+    @property
+    def surface_grazing_cutoff(self) -> float:
+        return self._surface_grazing_cutoff
+
+    @surface_grazing_cutoff.setter
+    def surface_grazing_cutoff(self, surface_grazing_cutoff: float):
+        cv.check_type('surface grazing cutoff', surface_grazing_cutoff, float)
+        cv.check_greater_than('surface grazing cutoff', surface_grazing_cutoff, 0.0)
+        cv.check_less_than('surface grazing cutoff', surface_grazing_cutoff, 1.0)
+        self._surface_grazing_cutoff = surface_grazing_cutoff
+
+    @property
+    def surface_grazing_ratio(self) -> float:
+        return self._surface_grazing_ratio
+
+    @surface_grazing_ratio.setter
+    def surface_grazing_ratio(self, surface_grazing_ratio: float):
+        cv.check_type('surface grazing ratio', surface_grazing_ratio, float)
+        cv.check_greater_than('surface grazing ratio', surface_grazing_ratio, 0.0)
+        self._surface_grazing_ratio = surface_grazing_ratio
 
     @property
     def survival_biasing(self) -> bool:
@@ -1037,6 +1099,18 @@ class Settings:
         self._temperature = temperature
 
     @property
+    def properties_file(self) -> PathLike | None:
+        return self._properties_file
+
+    @properties_file.setter
+    def properties_file(self, value: PathLike | None):
+        if value is None:
+            self._properties_file = None
+        else:
+            cv.check_type('properties file', value, PathLike)
+            self._properties_file = input_path(value)
+
+    @property
     def trace(self) -> Iterable:
         return self._trace
 
@@ -1263,6 +1337,15 @@ class Settings:
         self._weight_windows_on = value
 
     @property
+    def shared_secondary_bank(self) -> bool:
+        return self._shared_secondary_bank
+
+    @shared_secondary_bank.setter
+    def shared_secondary_bank(self, value: bool):
+        cv.check_type('shared secondary bank', value, bool)
+        self._shared_secondary_bank = value
+
+    @property
     def weight_window_checkpoints(self) -> dict:
         return self._weight_window_checkpoints
 
@@ -1380,6 +1463,14 @@ class Settings:
                 cv.check_type('diagonal stabilization rho', value, Real)
                 cv.check_greater_than('diagonal stabilization rho',
                                       value, 0.0, True)
+            elif key == 'adjoint_source':
+                if not isinstance(value, MutableSequence):
+                    value = [value]
+                for source in value:
+                    if not isinstance(source, SourceBase):
+                        raise ValueError(
+                            f'Invalid adjoint source type: {type(source)}. '
+                            'Expected openmc.SourceBase.')
             else:
                 raise ValueError(f'Unable to set random ray to "{key}" which is '
                                  'unsupported by OpenMC')
@@ -1620,6 +1711,11 @@ class Settings:
             element = ET.SubElement(root, "electron_treatment")
             element.text = str(self._electron_treatment)
 
+    def _create_atomic_relaxation_subelement(self, root):
+        if self._atomic_relaxation is not None:
+            element = ET.SubElement(root, "atomic_relaxation")
+            element.text = str(self._atomic_relaxation).lower()
+
     def _create_photon_transport_subelement(self, root):
         if self._photon_transport is not None:
             element = ET.SubElement(root, "photon_transport")
@@ -1644,6 +1740,16 @@ class Settings:
         if self._stride is not None:
             element = ET.SubElement(root, "stride")
             element.text = str(self._stride)
+
+    def _create_surface_grazing_cutoff_subelement(self, root):
+        if self._surface_grazing_cutoff is not None:
+            element = ET.SubElement(root, "surface_grazing_cutoff")
+            element.text = str(self._surface_grazing_cutoff)
+
+    def _create_surface_grazing_ratio_subelement(self, root):
+        if self._surface_grazing_ratio is not None:
+            element = ET.SubElement(root, "surface_grazing_ratio")
+            element.text = str(self._surface_grazing_ratio)
 
     def _create_survival_biasing_subelement(self, root):
         if self._survival_biasing is not None:
@@ -1736,6 +1842,12 @@ class Settings:
                     element.text = ' '.join(str(T) for T in value)
                 else:
                     element.text = str(value)
+
+    def _create_properties_file_element(self, root):
+        if self.properties_file is not None:
+            element = ET.Element("properties_file")
+            element.text = str(self.properties_file)
+            root.append(element)
 
     def _create_trace_subelement(self, root):
         if self._trace is not None:
@@ -1856,6 +1968,11 @@ class Settings:
             elem = ET.SubElement(root, "weight_windows_on")
             elem.text = str(self._weight_windows_on).lower()
 
+    def _create_shared_secondary_bank_subelement(self, root):
+        if self._shared_secondary_bank is not None:
+            elem = ET.SubElement(root, "shared_secondary_bank")
+            elem.text = str(self._shared_secondary_bank).lower()
+
     def _create_weight_window_generators_subelement(self, root, mesh_memo=None):
         if not self.weight_window_generators:
             return
@@ -1916,11 +2033,12 @@ class Settings:
             element = ET.SubElement(root, "random_ray")
             for key, value in self._random_ray.items():
                 if key == 'ray_source' and isinstance(value, SourceBase):
+                    subelement = ET.SubElement(element, 'ray_source')
                     source_element = value.to_xml_element()
                     if source_element.find('bias') is not None:
                         raise RuntimeError(
                             "Ray source distributions should not be biased.")
-                    element.append(source_element)
+                    subelement.append(source_element)
 
                 elif key == 'source_region_meshes':
                     subelement = ET.SubElement(element, 'source_region_meshes')
@@ -1940,6 +2058,18 @@ class Settings:
                             root.append(mesh.to_xml_element())
                             if mesh_memo is not None:
                                 mesh_memo.add(mesh.id)
+                elif key == 'adjoint_source':
+                    subelement = ET.SubElement(element, 'adjoint_source')
+                    # Check that all entries are valid SourceBase instances, in case
+                    # the random_ray setter was not used to populate dict entries.
+                    if not isinstance(value, MutableSequence):
+                        value = [value]
+                    for source in value:
+                        if not isinstance(source, SourceBase):
+                            raise ValueError(
+                                f'Invalid adjoint source type: {type(source)}. '
+                                'Expected openmc.SourceBase.')
+                        subelement.append(source.to_xml_element())
                 elif isinstance(value, bool):
                     subelement = ET.SubElement(element, key)
                     subelement.text = str(value).lower()
@@ -2113,6 +2243,11 @@ class Settings:
         if text is not None:
             self.electron_treatment = text
 
+    def _atomic_relaxation_from_xml_element(self, root):
+        text = get_text(root, 'atomic_relaxation')
+        if text is not None:
+            self.atomic_relaxation = text in ('true', '1')
+
     def _energy_mode_from_xml_element(self, root):
         text = get_text(root, 'energy_mode')
         if text is not None:
@@ -2152,6 +2287,16 @@ class Settings:
         text = get_text(root, 'stride')
         if text is not None:
             self.stride = int(text)
+
+    def _surface_grazing_cutoff_from_xml_element(self, root):
+        text = get_text(root, 'surface_grazing_cutoff')
+        if text is not None:
+            self.surface_grazing_cutoff = float(text)
+
+    def _surface_grazing_ratio_from_xml_element(self, root):
+        text = get_text(root, 'surface_grazing_ratio')
+        if text is not None:
+            self.surface_grazing_ratio = float(text)
 
     def _survival_biasing_from_xml_element(self, root):
         text = get_text(root, 'survival_biasing')
@@ -2238,6 +2383,11 @@ class Settings:
         text = get_text(root, 'temperature_multipole')
         if text is not None:
             self.temperature['multipole'] = text in ('true', '1')
+
+    def _properties_file_from_xml_element(self, root):
+        text = get_text(root, 'properties_file')
+        if text is not None:
+            self.properties_file = text
 
     def _trace_from_xml_element(self, root):
         text = get_elem_list(root, "trace", int)
@@ -2334,6 +2484,11 @@ class Settings:
         if text is not None:
             self.weight_windows_on = text in ('true', '1')
 
+    def _shared_secondary_bank_from_xml_element(self, root):
+        text = get_text(root, 'shared_secondary_bank')
+        if text is not None:
+            self.shared_secondary_bank = text in ('true', '1')
+
     def _weight_windows_file_from_xml_element(self, root):
         text = get_text(root, 'weight_windows_file')
         if text is not None:
@@ -2371,8 +2526,9 @@ class Settings:
             for child in elem:
                 if child.tag in ('distance_inactive', 'distance_active', 'diagonal_stabilization_rho'):
                     self.random_ray[child.tag] = float(child.text)
-                elif child.tag == 'source':
-                    source = SourceBase.from_xml_element(child)
+                elif child.tag == 'ray_source':
+                    source_element = child.find('source')
+                    source = SourceBase.from_xml_element(source_element)
                     if child.find('bias') is not None:
                         raise RuntimeError(
                             "Ray source distributions should not be biased.")
@@ -2389,6 +2545,12 @@ class Settings:
                     self.random_ray['adjoint'] = (
                         child.text in ('true', '1')
                     )
+                elif child.tag == 'adjoint_source':
+                    self.random_ray['adjoint_source'] = []
+                    for subelem in child.findall('source'):
+                        src = SourceBase.from_xml_element(subelem)
+                        # add newly constructed source object to the list
+                        self.random_ray['adjoint_source'].append(src)
                 elif child.tag == 'sample_method':
                     self.random_ray['sample_method'] = child.text
                 elif child.tag == 'source_region_meshes':
@@ -2457,6 +2619,7 @@ class Settings:
         self._create_collision_track_subelement(element)
         self._create_confidence_intervals(element)
         self._create_electron_treatment_subelement(element)
+        self._create_atomic_relaxation_subelement(element)
         self._create_energy_mode_subelement(element)
         self._create_max_order_subelement(element)
         self._create_photon_transport_subelement(element)
@@ -2465,6 +2628,8 @@ class Settings:
         self._create_ptables_subelement(element)
         self._create_seed_subelement(element)
         self._create_stride_subelement(element)
+        self._create_surface_grazing_cutoff_subelement(element)
+        self._create_surface_grazing_ratio_subelement(element)
         self._create_survival_biasing_subelement(element)
         self._create_cutoff_subelement(element)
         self._create_entropy_mesh_subelement(element, mesh_memo)
@@ -2475,6 +2640,7 @@ class Settings:
         self._create_unionized_energy_grid_subelement(element)
         self._create_tabular_legendre_subelements(element)
         self._create_temperature_subelements(element)
+        self._create_properties_file_element(element)
         self._create_trace_subelement(element)
         self._create_track_subelement(element)
         self._create_ufs_mesh_subelement(element, mesh_memo)
@@ -2491,6 +2657,7 @@ class Settings:
         self._create_write_initial_source_subelement(element)
         self._create_weight_windows_subelement(element, mesh_memo)
         self._create_weight_windows_on_subelement(element)
+        self._create_shared_secondary_bank_subelement(element)
         self._create_weight_window_generators_subelement(element, mesh_memo)
         self._create_weight_windows_file_element(element)
         self._create_weight_window_checkpoints_subelement(element)
@@ -2572,6 +2739,7 @@ class Settings:
         settings._collision_track_from_xml_element(elem)
         settings._confidence_intervals_from_xml_element(elem)
         settings._electron_treatment_from_xml_element(elem)
+        settings._atomic_relaxation_from_xml_element(elem)
         settings._energy_mode_from_xml_element(elem)
         settings._max_order_from_xml_element(elem)
         settings._photon_transport_from_xml_element(elem)
@@ -2580,6 +2748,8 @@ class Settings:
         settings._ptables_from_xml_element(elem)
         settings._seed_from_xml_element(elem)
         settings._stride_from_xml_element(elem)
+        settings._surface_grazing_cutoff_from_xml_element(elem)
+        settings._surface_grazing_ratio_from_xml_element(elem)
         settings._survival_biasing_from_xml_element(elem)
         settings._cutoff_from_xml_element(elem)
         settings._entropy_mesh_from_xml_element(elem, meshes)
@@ -2590,6 +2760,7 @@ class Settings:
         settings._unionized_energy_grid_from_xml_element(elem)
         settings._tabular_legendre_from_xml_element(elem)
         settings._temperature_from_xml_element(elem)
+        settings._properties_file_from_xml_element(elem)
         settings._trace_from_xml_element(elem)
         settings._track_from_xml_element(elem)
         settings._ufs_mesh_from_xml_element(elem, meshes)
@@ -2605,6 +2776,7 @@ class Settings:
         settings._write_initial_source_from_xml_element(elem)
         settings._weight_windows_from_xml_element(elem, meshes)
         settings._weight_windows_on_from_xml_element(elem)
+        settings._shared_secondary_bank_from_xml_element(elem)
         settings._weight_windows_file_from_xml_element(elem)
         settings._weight_window_generators_from_xml_element(elem, meshes)
         settings._weight_window_checkpoints_from_xml_element(elem)
@@ -2635,8 +2807,9 @@ class Settings:
             Settings object
 
         """
-        parser = ET.XMLParser(huge_tree=True)
-        tree = ET.parse(path, parser=parser)
-        root = tree.getroot()
-        meshes = _read_meshes(root)
-        return cls.from_xml_element(root, meshes)
+        with set_xml_input_path(path):
+            parser = ET.XMLParser(huge_tree=True)
+            tree = ET.parse(path, parser=parser)
+            root = tree.getroot()
+            meshes = _read_meshes(root)
+            return cls.from_xml_element(root, meshes)
