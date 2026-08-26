@@ -882,13 +882,7 @@ void Particle::update_neutron_xs(
       data::nuclides[i_nuclide]->calculate_elastic_xs(*this);
       ncrystal_update_micro(ncrystal_xs, micro);
     }
-
-    if (settings::ue_grid) {
-      this->ue_i_grid() = micro.index_grid;
-      this->ue_f() = micro.interp_factor;
-    }
   }
-
 }
 
 void Particle::update_neutron_ue_xs(

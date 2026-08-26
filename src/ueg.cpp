@@ -37,13 +37,13 @@ namespace openmc {
       for (int t = 0; t < nuclide->kTs_.size(); t++) {
          vector<double>& energies = nuclide->grid_[t].energy;
          ueg.insert(ueg.end(), energies.begin(), energies.end());
-
+        /*
         //Add URR energies to important energy grid
          if (nuclide->urr_present_) {
           const auto& urr_energies = nuclide->urr_data_[t].energy_;
           imp_e_grid.insert(imp_e_grid.end(), urr_energies.begin(), urr_energies.end());
         }
-      
+        */
         //Add threshold energies to important energy grid
         for (auto& rxn : nuclide->reactions_)
           imp_e_grid.insert(imp_e_grid.end(), energies[rxn->xs_[t].threshold]);
@@ -51,15 +51,11 @@ namespace openmc {
     }
     //Sort ueg energy and thin redundant points according to the thinning cutoff parameter
     thin_union_energy_grid();
-    std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
-
+    
+    //Insert important grid points
     ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
-
-    std::inplace_merge(std::execution::par_unseq,
-                       ueg.begin(),
-                       ueg.begin() + (ueg.size() - imp_e_grid.size()),
-                       ueg.end());
-
+    std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
+    
     auto min_it = ueg.begin();
     auto max_it = --ueg.end();
 
@@ -144,15 +140,8 @@ namespace openmc {
           xs.value = vector<double>(rxn_xs.cbegin(), rxn_xs.cend());
         }
       }
-      // TODO - Replace [] overload with EnergyGrid pointers
-      
-      auto energy_0K = tensor::Tensor<double>(nuclide->energy_0K_.data(), nuclide->energy_0K_.size());
-      auto elastic_0K = tensor::Tensor<double>(nuclide->elastic_0K_.data(), nuclide->elastic_0K_.size());
-      auto temp = tensor::interp(e, energy_0K, elastic_0K);
-      grid.erase(1 + grid.begin(), grid.end());
 
-      nuclide->energy_0K_ = ueg.energy;
-      nuclide->elastic_0K_ = vector<double>(temp.cbegin(), temp.cend()); 
+      grid.erase(1 + grid.begin(), grid.end());
       nuclide->create_ue_derived(nuclide->prompt_photons_.get(), nuclide->delayed_photons_.get());
     }
   }
