@@ -1714,7 +1714,7 @@ class Settings:
 
     def _create_unionized_energy_grid_subelement(self, root):
         if self._unionized_energy_grid not in [None, False]:
-            element = ET.SubElement(root, "ue_grid")
+            element = ET.SubElement(root, "unionized_energy_grid")
             element.text = str(self._unionized_energy_grid)
 
     def _create_tabular_legendre_subelements(self, root):
@@ -2165,7 +2165,7 @@ class Settings:
             for key in ('energy_neutron', 'energy_photon', 'energy_electron',
                         'energy_positron', 'weight', 'weight_avg', 'time_neutron',
                         'time_photon', 'time_electron', 'time_positron',
-                        'survival_normalization', 'ue_grid'):
+                        'survival_normalization', 'unionized_energy_grid'):
                 value = get_text(elem, key)
                 if value is not None:
                     if key == 'survival_normalization':
@@ -2209,7 +2209,7 @@ class Settings:
             self.ifp_n_generation = int(text)
 
     def _unionized_energy_grid_from_xml_element(self, root):
-        text = get_text(root, 'ue_grid')
+        text = get_text(root, 'unionized_energy_grid')
         if text is not None:
             self.unionized_energy_grid = text in ('true', '1')
 

@@ -735,8 +735,8 @@ void read_settings_xml(pugi::xml_node root)
     if (check_for_node(node_cutoff, "time_positron")) {
       time_cutoff[3] = std::stod(get_node_value(node_cutoff, "time_positron"));
     }
-    if (check_for_node(node_cutoff, "ue_grid")) {
-      ue_grid_cutoff = std::stod(get_node_value(node_cutoff, "ue_grid"));
+    if (check_for_node(node_cutoff, "unionized_energy_grid")) {
+      ue_grid_cutoff = std::stod(get_node_value(node_cutoff, "unionized_energy_grid"));
       if (ue_grid_cutoff <= 0.0) {
         fatal_error(
           "'ue_grid_cutoff' must be greater than 0."
@@ -1119,8 +1119,8 @@ void read_settings_xml(pugi::xml_node root)
     }
   }
 
-  if (check_for_node(root, "ue_grid")) {
-    ue_grid = get_node_value_bool(root, "ue_grid");
+  if (check_for_node(root, "unionized_energy_grid")) {
+    ue_grid = get_node_value_bool(root, "unionized_energy_grid");
     if (ue_grid && !run_CE) {
       fatal_error("Unionized energy grid must be used with "
                   "continuous energy cross sections.");
