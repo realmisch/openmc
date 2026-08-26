@@ -83,9 +83,8 @@ public:
   double collapse_rate(int MT, double temperature, span<const double> energy,
     span<const double> flux) const;
 
-
-  //! Return a ParticleType object representing this nuclide
-  ParticleType particle_type() const { return {Z_, A_, metastable_}; }
+  void create_ue_derived(
+    const Function1D* prompt_photons, const Function1D* delayed_photons);
 
   //============================================================================
   // Data members
@@ -136,11 +135,6 @@ public:
 private:
   void create_derived(
     const Function1D* prompt_photons, const Function1D* delayed_photons);
-
-  //! \brief Calculate cross section data using unionized energy grid
-  void create_ue_derived(
-    const Function1D* prompt_photons, const Function1D* delayed_photons);
-
 
   //! Determine temperature index and interpolation factor
   //

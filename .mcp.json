@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "openmc-code-tools": {
-      "type": "stdio",
-      "command": "bash",
-      "args": [".claude/tools/start_server.sh"]
-    }
-  }
-}

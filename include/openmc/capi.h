@@ -9,41 +9,14 @@
 extern "C" {
 #endif
 
-//! Run a stochastic volume calculation
-//
-//! \return Status (negative if an error occurred)
 int openmc_calculate_volumes();
-
 int openmc_cell_filter_get_bins(
   int32_t index, const int32_t** cells, int32_t* n);
-
-//! Get the fill for a cell
-//
-//! \param index Index in the cells array
-//! \param type Type of the fill
-//! \param indices Array of material indices for cell
-//! \param n Length of indices array
-//! \return Status (negative if an error occurred)
 int openmc_cell_get_fill(
   int32_t index, int* type, int32_t** indices, int32_t* n);
-
-//! Get the ID of a cell
-//
-//! \param index Index in the cells array
-//! \param id ID of the cell
-//! \return Status (negative if an error occurred)
 int openmc_cell_get_id(int32_t index, int32_t* id);
-
-//! Get the temperature of a cell
-//
-//! \param index Index in the cells array
-//! \param instance Which instance of the cell. If a null pointer is
-//!                 passed, the temperature of the first instance is returned.
-//! \param T temperature of the cell
-//!\return Status (negative if an error occurred)
 int openmc_cell_get_temperature(
   int32_t index, const int32_t* instance, double* T);
-
 int openmc_cell_get_density(
   int32_t index, const int32_t* instance, double* rho);
 int openmc_cell_get_translation(int32_t index, double xyz[]);
@@ -150,13 +123,8 @@ int openmc_new_filter(const char* type, int32_t* index);
 int openmc_next_batch(int* status);
 int openmc_nuclide_name(int index, const char** name);
 int openmc_plot_geometry();
-// Deprecated; use openmc_slice_data.
 int openmc_id_map(const void* slice, int32_t* data_out);
-// Deprecated; use openmc_slice_data.
 int openmc_property_map(const void* slice, double* data_out);
-int openmc_slice_data(const double origin[3], const double u_span[3],
-  const double v_span[3], const size_t pixels[2], bool show_overlaps, int level,
-  int32_t filter_index, int32_t* geom_data, double* property_data);
 int openmc_get_plot_index(int32_t id, int32_t* index);
 int openmc_plot_get_id(int32_t index, int32_t* id);
 int openmc_plot_set_id(int32_t index, int32_t id);
@@ -307,7 +275,7 @@ int openmc_zernike_filter_set_params(
 int openmc_particle_filter_get_bins(int32_t idx, int32_t bins[]);
 
 //! Sets the mesh and energy grid for CMFD reweight
-//! \param[in] meshtally_id id of CMFD Mesh Tally
+//! \param[in] meshtyally_id id of CMFD Mesh Tally
 //! \param[in] cmfd_indices indices storing spatial and energy dimensions of
 //! CMFD problem \param[in] norm CMFD normalization factor
 void openmc_initialize_mesh_egrid(
@@ -352,33 +320,21 @@ int openmc_properties_export(const char* filename);
 // \return Error code
 int openmc_properties_import(const char* filename);
 
-//! Get whether an optional build feature is enabled.
-//!
-//! Supported feature names are ``dagmc``, ``libmesh``, ``strict_fp``, and
-//! ``uwuw``.
-//! \param feature Name of the feature to query
-//! \param enabled Whether the feature is enabled
-//! \return Error code
-int openmc_get_feature_enabled(const char* feature, bool* enabled);
+// Error codes
+extern int OPENMC_E_UNASSIGNED;
+extern int OPENMC_E_ALLOCATE;
+extern int OPENMC_E_OUT_OF_BOUNDS;
+extern int OPENMC_E_INVALID_SIZE;
+extern int OPENMC_E_INVALID_ARGUMENT;
+extern int OPENMC_E_INVALID_TYPE;
+extern int OPENMC_E_INVALID_ID;
+extern int OPENMC_E_GEOMETRY;
+extern int OPENMC_E_DATA;
+extern int OPENMC_E_PHYSICS;
+extern int OPENMC_E_WARNING;
 
-//! Return the message associated with the most recent C API error.
-//!
-//! The returned pointer is valid until the next error message is set.
-const char* openmc_get_err_msg();
-
-typedef enum OpenmcErrorCode {
-  OPENMC_E_WARNING = 1,
-  OPENMC_E_UNASSIGNED = -1,
-  OPENMC_E_ALLOCATE = -2,
-  OPENMC_E_OUT_OF_BOUNDS = -3,
-  OPENMC_E_INVALID_SIZE = -4,
-  OPENMC_E_INVALID_ARGUMENT = -5,
-  OPENMC_E_INVALID_TYPE = -6,
-  OPENMC_E_INVALID_ID = -7,
-  OPENMC_E_GEOMETRY = -8,
-  OPENMC_E_DATA = -9,
-  OPENMC_E_PHYSICS = -10
-} OpenmcErrorCode;
+// Global variables
+extern char openmc_err_msg[256];
 
 #ifdef __cplusplus
 }

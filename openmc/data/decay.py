@@ -2,6 +2,7 @@ from collections.abc import Iterable
 from functools import cached_property
 from io import StringIO
 from math import log
+import re
 from warnings import warn
 
 import numpy as np
@@ -12,10 +13,9 @@ import openmc.checkvalue as cv
 from openmc.exceptions import DataError
 from openmc.mixin import EqualityMixin
 from openmc.stats import Discrete, Tabular, Univariate, combine_distributions
-from .data import gnds_name, zam
+from .data import ATOMIC_NUMBER, gnds_name
 from .function import INTERPOLATION_SCHEME
-from .endf import (
-    as_evaluation, get_head_record, get_list_record, get_tab1_record)
+from .endf import Evaluation, get_head_record, get_list_record, get_tab1_record
 
 
 # Gives name and (change in A, change in Z) resulting from decay
@@ -76,7 +76,7 @@ class FissionProductYields(EqualityMixin):
 
     Parameters
     ----------
-    ev_or_filename : str, openmc.data.endf.Evaluation, or endf.Material
+    ev_or_filename : str of openmc.data.endf.Evaluation
         ENDF fission product yield evaluation to read from. If given as a
         string, it is assumed to be the filename for the ENDF file.
 
@@ -134,7 +134,11 @@ class FissionProductYields(EqualityMixin):
 
             return energies, data
 
-        ev = as_evaluation(ev_or_filename)
+        # Get evaluation if str is passed
+        if isinstance(ev_or_filename, Evaluation):
+            ev = ev_or_filename
+        else:
+            ev = Evaluation(ev_or_filename)
 
         # Assign basic nuclide properties
         self.nuclide = {
@@ -161,7 +165,7 @@ class FissionProductYields(EqualityMixin):
 
         Parameters
         ----------
-        ev_or_filename : str, openmc.data.endf.Evaluation, or endf.Material
+        ev_or_filename : str or openmc.data.endf.Evaluation
             ENDF fission product yield evaluation to read from. If given as a
             string, it is assumed to be the filename for the ENDF file.
 
@@ -237,7 +241,9 @@ class DecayMode(EqualityMixin):
     @property
     def daughter(self):
         # Determine atomic number and mass number of parent
-        Z, A, _ = zam(self.parent)
+        symbol, A = re.match(r'([A-Zn][a-z]*)(\d+)', self.parent).groups()
+        A = int(A)
+        Z = ATOMIC_NUMBER[symbol]
 
         # Process changes
         for mode in self.modes:
@@ -247,9 +253,6 @@ class DecayMode(EqualityMixin):
                         delta_A, delta_Z = changes
                         A += delta_A
                         Z += delta_Z
-                        break
-                    else:
-                        return None
 
         return gnds_name(Z, A, self._daughter_state)
 
@@ -289,7 +292,7 @@ class Decay(EqualityMixin):
 
     Parameters
     ----------
-    ev_or_filename : str, openmc.data.endf.Evaluation, or endf.Material
+    ev_or_filename : str of openmc.data.endf.Evaluation
         ENDF radioactive decay data evaluation to read from. If given as a
         string, it is assumed to be the filename for the ENDF file.
 
@@ -320,7 +323,11 @@ class Decay(EqualityMixin):
 
     """
     def __init__(self, ev_or_filename):
-        ev = as_evaluation(ev_or_filename)
+        # Get evaluation if str is passed
+        if isinstance(ev_or_filename, Evaluation):
+            ev = ev_or_filename
+        else:
+            ev = Evaluation(ev_or_filename)
 
         file_obj = StringIO(ev.section[8, 457])
 
@@ -479,7 +486,7 @@ class Decay(EqualityMixin):
 
         Parameters
         ----------
-        ev_or_filename : str, openmc.data.endf.Evaluation, or endf.Material
+        ev_or_filename : str or openmc.data.endf.Evaluation
             ENDF radioactive decay data evaluation to read from. If given as a
             string, it is assumed to be the filename for the ENDF file.
 
@@ -513,9 +520,11 @@ class Decay(EqualityMixin):
                 'neutrino': 'neutrino',
             }[particle]
 
+            if particle_type not in sources:
+                sources[particle_type] = []
+
             # Create distribution for discrete
-            if (spectra['continuous_flag'] in ('discrete', 'both')
-                    and spectra['discrete']):
+            if spectra['continuous_flag'] in ('discrete', 'both'):
                 energies = []
                 intensities = []
                 for discrete_data in spectra['discrete']:
@@ -525,7 +534,7 @@ class Decay(EqualityMixin):
                 intensity = spectra['discrete_normalization'].n
                 rates = decay_constant * intensity * np.array(intensities)
                 dist_discrete = Discrete(energies, rates)
-                sources.setdefault(particle_type, []).append(dist_discrete)
+                sources[particle_type].append(dist_discrete)
 
             # Create distribution for continuous
             if spectra['continuous_flag'] in ('continuous', 'both'):
@@ -541,7 +550,7 @@ class Decay(EqualityMixin):
                 intensity = spectra['continuous_normalization'].n
                 rates = decay_constant * intensity * f.y
                 dist_continuous = Tabular(f.x, rates, interpolation)
-                sources.setdefault(particle_type, []).append(dist_continuous)
+                sources[particle_type].append(dist_continuous)
 
         # Combine discrete distributions
         merged_sources = {}
@@ -640,3 +649,5 @@ def decay_energy(nuclide: str):
             warn(f"Chain file '{chain_file}' does not have any decay energy.")
 
     return _DECAY_ENERGY.get(nuclide, 0.0)
+
+

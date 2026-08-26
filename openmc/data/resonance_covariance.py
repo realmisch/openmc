@@ -74,7 +74,7 @@ class ResonanceCovariances(Resonances):
 
         Parameters
         ----------
-        ev : openmc.data.endf.Evaluation or endf.Material
+        ev : openmc.data.endf.Evaluation
             ENDF evaluation
         resonances : openmc.data.Resonance object
             openmc.data.Resonanance object generated from the same evaluation
@@ -86,7 +86,6 @@ class ResonanceCovariances(Resonances):
             Resonance covariance data
 
         """
-        ev = endf.as_evaluation(ev)
         file_obj = io.StringIO(ev.section[32, 151])
 
         # Determine whether discrete or continuous representation

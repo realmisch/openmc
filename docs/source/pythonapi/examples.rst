@@ -10,10 +10,7 @@ Simple Models
    :nosignatures:
    :template: myfunction.rst
 
-   openmc.examples.random_ray_pin_cell
-   openmc.examples.random_ray_three_region_cube_with_detectors
    openmc.examples.slab_mg
-   openmc.examples.sphere_with_shielded_pocket
 
 Reactor Models
 --------------

@@ -1,6 +1,7 @@
 #include "openmc/plot.h"
 
 #include <algorithm>
+#define _USE_MATH_DEFINES // to make M_PI declared in Intel and MSVC compilers
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -32,7 +33,6 @@
 #include "openmc/settings.h"
 #include "openmc/simulation.h"
 #include "openmc/string_utils.h"
-#include "openmc/tallies/filter.h"
 
 namespace openmc {
 
@@ -44,12 +44,10 @@ constexpr int PLOT_LEVEL_LOWEST {-1}; //!< lower bound on plot universe level
 constexpr int32_t NOT_FOUND {-2};
 constexpr int32_t OVERLAP {-3};
 
-IdData::IdData(size_t h_res, size_t v_res, bool /*include_filter*/)
-  : data_({v_res, h_res, 3}, NOT_FOUND)
+IdData::IdData(size_t h_res, size_t v_res) : data_({v_res, h_res, 3}, NOT_FOUND)
 {}
 
-void IdData::set_value(size_t y, size_t x, const Particle& p, int level,
-  Filter* /*filter*/, FilterMatch* /*match*/)
+void IdData::set_value(size_t y, size_t x, const GeometryState& p, int level)
 {
   // set cell data
   if (p.n_coord() <= level) {
@@ -66,101 +64,37 @@ void IdData::set_value(size_t y, size_t x, const Particle& p, int level,
   Cell* c = model::cells.at(p.lowest_coord().cell()).get();
   if (p.material() == MATERIAL_VOID) {
     data_(y, x, 2) = MATERIAL_VOID;
+    return;
   } else if (c->type_ == Fill::MATERIAL) {
     Material* m = model::materials.at(p.material()).get();
     data_(y, x, 2) = m->id_;
   }
 }
 
-void IdData::set_overlap(size_t y, size_t x, int /*overlap_idx*/)
+void IdData::set_overlap(size_t y, size_t x)
 {
   for (size_t k = 0; k < data_.shape(2); ++k)
     data_(y, x, k) = OVERLAP;
 }
 
-PropertyData::PropertyData(size_t h_res, size_t v_res, bool /*include_filter*/)
+PropertyData::PropertyData(size_t h_res, size_t v_res)
   : data_({v_res, h_res, 2}, NOT_FOUND)
 {}
 
-void PropertyData::set_value(size_t y, size_t x, const Particle& p, int level,
-  Filter* /*filter*/, FilterMatch* /*match*/)
+void PropertyData::set_value(
+  size_t y, size_t x, const GeometryState& p, int level)
 {
   Cell* c = model::cells.at(p.lowest_coord().cell()).get();
   data_(y, x, 0) = (p.sqrtkT() * p.sqrtkT()) / K_BOLTZMANN;
-  data_(y, x, 1) = c->density(p.cell_instance());
-}
-
-void PropertyData::set_overlap(size_t y, size_t x, int /*overlap_idx*/)
-{
-  data_(y, x) = OVERLAP;
-}
-
-//==============================================================================
-// RasterData implementation
-//==============================================================================
-
-RasterData::RasterData(size_t h_res, size_t v_res, bool include_filter)
-  : id_data_({v_res, h_res, include_filter ? 4u : 3u}, NOT_FOUND),
-    property_data_({v_res, h_res, 2}, static_cast<double>(NOT_FOUND)),
-    include_filter_(include_filter)
-{}
-
-void RasterData::set_value(size_t y, size_t x, const Particle& p, int level,
-  Filter* filter, FilterMatch* match)
-{
-  // set cell data
-  if (p.n_coord() <= level) {
-    id_data_(y, x, 0) = NOT_FOUND;
-    id_data_(y, x, 1) = NOT_FOUND;
-  } else {
-    id_data_(y, x, 0) = model::cells.at(p.coord(level).cell())->id_;
-    id_data_(y, x, 1) = level == p.n_coord() - 1
-                          ? p.cell_instance()
-                          : cell_instance_at_level(p, level);
-  }
-
-  // set material data
-  Cell* c = model::cells.at(p.lowest_coord().cell()).get();
-  if (p.material() == MATERIAL_VOID) {
-    id_data_(y, x, 2) = MATERIAL_VOID;
-  } else if (c->type_ == Fill::MATERIAL) {
-    Material* m = model::materials.at(p.material()).get();
-    id_data_(y, x, 2) = m->id_;
-  }
-
-  // set filter index (only if filter is being used)
-  if (include_filter_ && filter) {
-    filter->get_all_bins(p, TallyEstimator::COLLISION, *match);
-    if (match->bins_.empty()) {
-      id_data_(y, x, 3) = -1;
-    } else {
-      id_data_(y, x, 3) = match->bins_[0];
-    }
-    match->bins_.clear();
-    match->weights_.clear();
-  }
-
-  // set temperature (in K)
-  property_data_(y, x, 0) = (p.sqrtkT() * p.sqrtkT()) / K_BOLTZMANN;
-
-  // set density (g/cm³)
   if (c->type_ != Fill::UNIVERSE && p.material() != MATERIAL_VOID) {
     Material* m = model::materials.at(p.material()).get();
-    property_data_(y, x, 1) = c->density(p.cell_instance());
+    data_(y, x, 1) = m->density_gpcc_;
   }
 }
 
-void RasterData::set_overlap(size_t y, size_t x, int overlap_idx)
+void PropertyData::set_overlap(size_t y, size_t x)
 {
-  // Set cell, instance, and material to OVERLAP, but preserve filter bin for
-  // tally plotting. Cell encodes the overlap index as a negative number so that
-  // it can be used to look up overlap information in the plotter.
-  id_data_(y, x, 0) = OVERLAP - overlap_idx - 1;
-  id_data_(y, x, 1) = OVERLAP;
-  id_data_(y, x, 2) = OVERLAP;
-
-  property_data_(y, x, 0) = OVERLAP;
-  property_data_(y, x, 1) = OVERLAP;
+  data_(y, x) = OVERLAP;
 }
 
 //==============================================================================
@@ -516,22 +450,6 @@ void Plot::set_width(pugi::xml_node plot_node)
     if (pl_width.size() == 2) {
       width_.x = pl_width[0];
       width_.y = pl_width[1];
-      switch (basis_) {
-      case PlotBasis::xy:
-        u_span_ = {width_.x, 0.0, 0.0};
-        v_span_ = {0.0, width_.y, 0.0};
-        break;
-      case PlotBasis::xz:
-        u_span_ = {width_.x, 0.0, 0.0};
-        v_span_ = {0.0, 0.0, width_.y};
-        break;
-      case PlotBasis::yz:
-        u_span_ = {0.0, width_.x, 0.0};
-        v_span_ = {0.0, 0.0, width_.y};
-        break;
-      default:
-        UNREACHABLE();
-      }
     } else {
       fatal_error(
         fmt::format("<width> must be length 2 in slice plot {}", id()));
@@ -847,7 +765,7 @@ Plot::Plot(pugi::xml_node plot_node, PlotType type)
   set_width(plot_node);
   set_meshlines(plot_node);
   slice_level_ = level_; // Copy level employed in SlicePlotBase::get_map
-  show_overlaps_ = color_overlaps_;
+  slice_color_overlaps_ = color_overlaps_;
 }
 
 //==============================================================================
@@ -944,37 +862,21 @@ void Plot::draw_mesh_lines(ImageData& data) const
   rgb = meshlines_color_;
 
   int ax1, ax2;
-  Position expected_u {};
-  Position expected_v {};
   switch (basis_) {
   case PlotBasis::xy:
     ax1 = 0;
     ax2 = 1;
-    expected_u = {width_[0], 0.0, 0.0};
-    expected_v = {0.0, width_[1], 0.0};
     break;
   case PlotBasis::xz:
     ax1 = 0;
     ax2 = 2;
-    expected_u = {width_[0], 0.0, 0.0};
-    expected_v = {0.0, 0.0, width_[1]};
     break;
   case PlotBasis::yz:
     ax1 = 1;
     ax2 = 2;
-    expected_u = {0.0, width_[0], 0.0};
-    expected_v = {0.0, 0.0, width_[1]};
     break;
   default:
     UNREACHABLE();
-  }
-
-  // Meshlines rely on axis-aligned indexing in global coordinates.
-  constexpr double rel_tol {1e-12};
-  double span_tol = rel_tol * (1.0 + u_span_.norm() + v_span_.norm());
-  if ((u_span_ - expected_u).norm() > span_tol ||
-      (v_span_ - expected_v).norm() > span_tol) {
-    fatal_error("Meshlines are only supported for axis-aligned slice plots.");
   }
 
   Position ll_plot {origin_};
@@ -1106,11 +1008,11 @@ void Plot::create_voxel() const
   voxel_init(file_id, &(dims[0]), &dspace, &dset, &memspace);
 
   SlicePlotBase pltbase;
+  pltbase.width_ = width_;
   pltbase.origin_ = origin_;
-  pltbase.u_span_ = {width_.x, 0.0, 0.0};
-  pltbase.v_span_ = {0.0, width_.y, 0.0};
+  pltbase.basis_ = PlotBasis::xy;
   pltbase.pixels() = pixels();
-  pltbase.show_overlaps_ = color_overlaps_;
+  pltbase.slice_color_overlaps_ = color_overlaps_;
 
   ProgressBar pb;
   for (int z = 0; z < pixels()[2]; z++) {
@@ -1327,7 +1229,7 @@ std::pair<Position, Direction> RayTracePlot::get_pixel_ray(
   int horiz, int vert) const
 {
   // Compute field of view in radians
-  constexpr double DEGREE_TO_RADIAN = PI / 180.0;
+  constexpr double DEGREE_TO_RADIAN = M_PI / 180.0;
   double horiz_fov_radians = horizontal_field_of_view_ * DEGREE_TO_RADIAN;
   double p0 = static_cast<double>(pixels()[0]);
   double p1 = static_cast<double>(pixels()[1]);
@@ -1747,6 +1649,144 @@ void SolidRayTracePlot::set_diffuse_fraction(pugi::xml_node node)
   }
 }
 
+void Ray::compute_distance()
+{
+  boundary() = distance_to_boundary(*this);
+}
+
+void Ray::trace()
+{
+  // To trace the ray from its origin all the way through the model, we have
+  // to proceed in two phases. In the first, the ray may or may not be found
+  // inside the model. If the ray is already in the model, phase one can be
+  // skipped. Otherwise, the ray has to be advanced to the boundary of the
+  // model where all the cells are defined. Importantly, this is assuming that
+  // the model is convex, which is a very reasonable assumption for any
+  // radiation transport model.
+  //
+  // After phase one is done, we can starting tracing from cell to cell within
+  // the model. This step can use neighbor lists to accelerate the ray tracing.
+
+  // Attempt to initialize the particle. We may have to enter a loop to move
+  // it up to the edge of the model.
+  bool inside_cell = exhaustive_find_cell(*this, settings::verbosity >= 10);
+
+  // Advance to the boundary of the model
+  while (!inside_cell) {
+    advance_to_boundary_from_void();
+    inside_cell = exhaustive_find_cell(*this, settings::verbosity >= 10);
+
+    // If true this means no surface was intersected. See cell.cpp and search
+    // for numeric_limits to see where we return it.
+    if (surface() == std::numeric_limits<int>::max()) {
+      warning(fmt::format("Lost a ray, r = {}, u = {}", r(), u()));
+      return;
+    }
+
+    // Exit this loop and enter into cell-to-cell ray tracing (which uses
+    // neighbor lists)
+    if (inside_cell)
+      break;
+
+    // if there is no intersection with the model, we're done
+    if (boundary().surface() == SURFACE_NONE)
+      return;
+
+    event_counter_++;
+    if (event_counter_ > MAX_INTERSECTIONS) {
+      warning("Likely infinite loop in ray traced plot");
+      return;
+    }
+  }
+
+  // Call the specialized logic for this type of ray. This is for the
+  // intersection for the first intersection if we had one.
+  if (boundary().surface() != SURFACE_NONE) {
+    // set the geometry state's surface attribute to be used for
+    // surface normal computation
+    surface() = boundary().surface();
+    on_intersection();
+    if (stop_)
+      return;
+  }
+
+  // reset surface attribute to zero after the first intersection so that it
+  // doesn't perturb surface crossing logic from here on out
+  surface() = 0;
+
+  // This is the ray tracing loop within the model. It exits after exiting
+  // the model, which is equivalent to assuming that the model is convex.
+  // It would be nice to factor out the on_intersection at the end of this
+  // loop and then do "while (inside_cell)", but we can't guarantee it's
+  // on a surface in that case. There might be some other way to set it
+  // up that is perhaps a little more elegant, but this is what works just
+  // fine.
+  while (true) {
+
+    compute_distance();
+
+    // There are no more intersections to process
+    // if we hit the edge of the model, so stop
+    // the particle in that case. Also, just exit
+    // if a negative distance was somehow computed.
+    if (boundary().distance() == INFTY || boundary().distance() == INFINITY ||
+        boundary().distance() < 0) {
+      return;
+    }
+
+    // See below comment where call_on_intersection is checked in an
+    // if statement for an explanation of this.
+    bool call_on_intersection {true};
+    if (boundary().distance() < 10 * TINY_BIT) {
+      call_on_intersection = false;
+    }
+
+    // DAGMC surfaces expect us to go a little bit further than the advance
+    // distance to properly check cell inclusion.
+    boundary().distance() += TINY_BIT;
+
+    // Advance particle, prepare for next intersection
+    for (int lev = 0; lev < n_coord(); ++lev) {
+      coord(lev).r() += boundary().distance() * coord(lev).u();
+    }
+    surface() = boundary().surface();
+    n_coord_last() = n_coord();
+    n_coord() = boundary().coord_level();
+    if (boundary().lattice_translation()[0] != 0 ||
+        boundary().lattice_translation()[1] != 0 ||
+        boundary().lattice_translation()[2] != 0) {
+      cross_lattice(*this, boundary(), settings::verbosity >= 10);
+    }
+
+    // Record how far the ray has traveled
+    traversal_distance_ += boundary().distance();
+    inside_cell = neighbor_list_find_cell(*this, settings::verbosity >= 10);
+
+    // Call the specialized logic for this type of ray. Note that we do not
+    // call this if the advance distance is very small. Unfortunately, it seems
+    // darn near impossible to get the particle advanced to the model boundary
+    // and through it without sometimes accidentally calling on_intersection
+    // twice. This incorrectly shades the region as occluded when it might not
+    // actually be. By screening out intersection distances smaller than a
+    // threshold 10x larger than the scoot distance used to advance up to the
+    // model boundary, we can avoid that situation.
+    if (call_on_intersection) {
+      on_intersection();
+      if (stop_)
+        return;
+    }
+
+    if (!inside_cell)
+      return;
+
+    event_counter_++;
+    if (event_counter_ > MAX_INTERSECTIONS) {
+      warning("Likely infinite loop in ray traced plot");
+      return;
+    }
+  }
+}
+
 void ProjectionRay::on_intersection()
 {
   // This records a tuple with the following info
@@ -1786,10 +1826,7 @@ void PhongRay::on_intersection()
     // the normal or the diffuse lighting contribution
     reflected_ = true;
     result_color_ = plot_.colors_[hit_id];
-    // The ray has been advanced slightly past the boundary. Use an
-    // approximation to the actual hit point for stable normal/lighting.
-    Position r_hit = r() - TINY_BIT * u();
-    Direction to_light = plot_.light_location_ - r_hit;
+    Direction to_light = plot_.light_location_ - r();
     to_light /= to_light.norm();
 
     // TODO
@@ -1810,22 +1847,12 @@ void PhongRay::on_intersection()
     // Get surface pointer
     const auto& surf = model::surfaces.at(surface_index());
 
-    // The crossed surface may be on a higher coordinate level than the
-    // innermost local coordinates, so we check the surface's coordinate level
-    // to find the appropriate coordinate level to use for the normal
-    // calculation
-    int surf_level = boundary().coord_level() - 1;
-    // ensure surface level is within bounds of current coordinate stack
-    surf_level = std::max(0, std::min(surf_level, n_coord() - 1));
-
-    Position r_hit_level =
-      coord(surf_level).r() - TINY_BIT * coord(surf_level).u();
-    Direction normal = surf->normal(r_hit_level);
+    Direction normal = surf->normal(r_local());
     normal /= normal.norm();
 
-    // Need to apply rotations to find the normal vector in
+    // Need to apply translations to find the normal vector in
     // the base level universe's coordinate system.
-    for (int lev = surf_level - 1; lev >= 0; --lev) {
+    for (int lev = n_coord() - 2; lev >= 0; --lev) {
       if (coord(lev + 1).rotated()) {
         const Cell& c {*model::cells[coord(lev).cell()]};
         normal = normal.inverse_rotate(c.rotation_);
@@ -1892,12 +1919,6 @@ void PhongRay::on_intersection()
 
 extern "C" int openmc_id_map(const void* plot, int32_t* data_out)
 {
-  static bool warned {false};
-  if (!warned) {
-    warning("openmc_id_map is deprecated and will be removed in a future "
-            "release. Use openmc_slice_data.");
-    warned = true;
-  }
 
   auto plt = reinterpret_cast<const SlicePlotBase*>(plot);
   if (!plt) {
@@ -1905,7 +1926,7 @@ extern "C" int openmc_id_map(const void* plot, int32_t* data_out)
     return OPENMC_E_INVALID_ARGUMENT;
   }
 
-  if (plt->show_overlaps_ && model::overlap_check_count.size() == 0) {
+  if (plt->slice_color_overlaps_ && model::overlap_check_count.size() == 0) {
     model::overlap_check_count.resize(model::cells.size());
   }
 
@@ -1919,20 +1940,14 @@ extern "C" int openmc_id_map(const void* plot, int32_t* data_out)
 
 extern "C" int openmc_property_map(const void* plot, double* data_out)
 {
-  static bool warned {false};
-  if (!warned) {
-    warning("openmc_property_map is deprecated and will be removed in a future "
-            "release. Use openmc_slice_data.");
-    warned = true;
-  }
 
   auto plt = reinterpret_cast<const SlicePlotBase*>(plot);
   if (!plt) {
-    set_errmsg("Invalid slice pointer passed to openmc_property_map");
+    set_errmsg("Invalid slice pointer passed to openmc_id_map");
     return OPENMC_E_INVALID_ARGUMENT;
   }
 
-  if (plt->show_overlaps_ && model::overlap_check_count.size() == 0) {
+  if (plt->slice_color_overlaps_ && model::overlap_check_count.size() == 0) {
     model::overlap_check_count.resize(model::cells.size());
   }
 
@@ -1940,96 +1955,6 @@ extern "C" int openmc_property_map(const void* plot, double* data_out)
 
   // write id data to array
   std::copy(props.data_.begin(), props.data_.end(), data_out);
-
-  return 0;
-}
-
-extern "C" int openmc_slice_data(const double origin[3], const double u_span[3],
-  const double v_span[3], const size_t pixels[2], bool color_overlaps,
-  int level, int32_t filter_index, int32_t* geom_data, double* property_data)
-{
-  // Validate span vectors
-  Direction u_span_pos {u_span[0], u_span[1], u_span[2]};
-  Direction v_span_pos {v_span[0], v_span[1], v_span[2]};
-  double u_norm = u_span_pos.norm();
-  double v_norm = v_span_pos.norm();
-  if (u_norm == 0.0 || v_norm == 0.0) {
-    set_errmsg("Slice span vectors must be non-zero.");
-    return OPENMC_E_INVALID_ARGUMENT;
-  }
-
-  constexpr double ORTHO_REL_TOL = 1e-10;
-  double dot = u_span_pos.dot(v_span_pos);
-  if (std::abs(dot) > ORTHO_REL_TOL * u_norm * v_norm) {
-    set_errmsg("Slice span vectors must be orthogonal.");
-    return OPENMC_E_INVALID_ARGUMENT;
-  }
-
-  // Validate filter index if provided
-  if (filter_index >= 0) {
-    if (int err = verify_filter(filter_index))
-      return err;
-  }
-
-  // Initialize overlap check vector if needed
-  if (color_overlaps && model::overlap_check_count.size() == 0) {
-    model::overlap_check_count.resize(model::cells.size());
-  }
-
-  try {
-    // Create a temporary SlicePlotBase object to reuse get_map logic
-    SlicePlotBase plot_params;
-    plot_params.origin_ = Position {origin[0], origin[1], origin[2]};
-    plot_params.u_span_ = u_span_pos;
-    plot_params.v_span_ = v_span_pos;
-    plot_params.pixels_[0] = pixels[0];
-    plot_params.pixels_[1] = pixels[1];
-    plot_params.show_overlaps_ = color_overlaps;
-    plot_params.slice_level_ = level;
-
-    // Clear overlap data structures on new slice call
-    model::overlap_keys.clear();
-    model::overlap_key_index.clear();
-
-    // Use get_map<RasterData> to generate data
-    auto data = plot_params.get_map<RasterData>(filter_index);
-    std::copy(data.id_data_.begin(), data.id_data_.end(), geom_data);
-
-    // Copy property data if requested
-    if (property_data != nullptr) {
-      std::copy(
-        data.property_data_.begin(), data.property_data_.end(), property_data);
-    }
-  } catch (const std::exception& e) {
-    set_errmsg(e.what());
-    return OPENMC_E_UNASSIGNED;
-  }
-
-  return 0;
-}
-
-// Gets the number of overlaps that we need data for
-extern "C" int openmc_slice_data_overlap_count(size_t* count)
-{
-  if (!count) {
-    set_errmsg("Null pointer passed for overlap count.");
-    return OPENMC_E_INVALID_ARGUMENT;
-  }
-  *count = model::overlap_keys.size();
-
-  return 0;
-}
-
-// Plotter pre-allocates array size based on what is returned with
-// overlap_count; populates an array of size 3*count
-extern "C" int openmc_slice_data_overlap_info(
-  size_t count, int32_t* overlap_info)
-{
-  for (size_t i = 0; i < count; ++i) {
-    overlap_info[i * 3] = model::overlap_keys[i].universe_id;
-    overlap_info[i * 3 + 1] = model::overlap_keys[i].cell1_id;
-    overlap_info[i * 3 + 2] = model::overlap_keys[i].cell2_id;
-  }
 
   return 0;
 }

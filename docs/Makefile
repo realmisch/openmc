@@ -45,7 +45,6 @@ help:
 clean:
 	-rm -rf $(BUILDDIR)/*
 	-rm -rf source/pythonapi/generated/
-	-rm -rf doxygen/xml
 
 html:
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html

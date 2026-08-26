@@ -4,7 +4,7 @@
 Depletion Results File Format
 =============================
 
-The current version of the depletion results file format is 1.3.
+The current version of the depletion results file format is 1.2.
 
 **/**
 
@@ -29,8 +29,6 @@ The current version of the depletion results file format is 1.3.
            - **depletion time** (*double[]*) -- Average process time in [s]
              spent depleting a material across all burnable materials and,
              if applicable, MPI processes.
-           - **keff_search_root** (*double[]*) -- Root of the keff search at the
-             end of the timestep, if applicable.
 
 **/materials/<id>/**
 

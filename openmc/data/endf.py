@@ -12,12 +12,7 @@ import re
 
 from .data import gnds_name
 from .function import Tabulated1D
-from endf.material import (
-    Material,
-    _LIBRARY,
-    _SUBLIBRARY,
-    get_materials as get_evaluations,
-)
+from endf.material import _LIBRARY, _SUBLIBRARY
 from endf.incident_neutron import SUM_RULES
 from endf.records import (
     float_endf,
@@ -44,12 +39,38 @@ def get_tab1_record(file_obj):
     return params, Tabulated1D(tab.x, tab.y, tab.breakpoints, tab.interpolation)
 
 
+def get_evaluations(filename):
+    """Return a list of all evaluations within an ENDF file.
+
+    Parameters
+    ----------
+    filename : str
+        Path to ENDF-6 formatted file
+
+    Returns
+    -------
+    list
+        A list of :class:`openmc.data.endf.Evaluation` instances.
+
+    """
+    evaluations = []
+    with open(str(filename), 'r') as fh:
+        while True:
+            pos = fh.tell()
+            line = fh.readline()
+            if line[66:70] == '  -1':
+                break
+            fh.seek(pos)
+            evaluations.append(Evaluation(fh))
+    return evaluations
+
+
 class Evaluation:
     """ENDF material evaluation with multiple files/sections
 
     Parameters
     ----------
-    filename_or_obj : str, file-like, or endf.Material
+    filename_or_obj : str or file-like
         Path to ENDF file to read or an open file positioned at the start of an
         ENDF material
 
@@ -69,25 +90,17 @@ class Evaluation:
 
     """
     def __init__(self, filename_or_obj):
-        self.section = {}
-        self.info = {}
-        self.target = {}
-        self.projectile = {}
-        self.reaction_list = []
-
-        if isinstance(filename_or_obj, Material):
-            self.section = dict(filename_or_obj.section_text)
-            self.section_data = filename_or_obj.section_data
-            self.material = filename_or_obj.MAT
-            self._read_header()
-            return
-
         if isinstance(filename_or_obj, (str, PurePath)):
             fh = open(str(filename_or_obj), 'r')
             need_to_close = True
         else:
             fh = filename_or_obj
             need_to_close = False
+        self.section = {}
+        self.info = {}
+        self.target = {}
+        self.projectile = {}
+        self.reaction_list = []
 
         # Skip TPID record. Evaluators sometimes put in TPID records that are
         # ill-formated because they lack MF/MT values or put them in the wrong
@@ -212,10 +225,3 @@ class Evaluation:
                          self.target['mass_number'],
                          self.target['isomeric_state'])
 
-
-def as_evaluation(ev_or_filename):
-    """Return an object supporting OpenMC's legacy Evaluation interface."""
-    if isinstance(ev_or_filename, Evaluation):
-        return ev_or_filename
-    else:
-        return Evaluation(ev_or_filename)

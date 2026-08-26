@@ -3,13 +3,12 @@
 Implements two different forms of CRAM for use in openmc.deplete.
 """
 
-from functools import partial
 import numbers
 
 import numpy as np
-from scipy.sparse.linalg import spsolve, splu
+import scipy.sparse.linalg as sla
 
-from openmc.checkvalue import check_type, check_length, check_greater_than
+from openmc.checkvalue import check_type, check_length
 from .abc import DepSystemSolver
 from .._sparse_compat import csc_array, eye_array
 
@@ -24,12 +23,6 @@ class IPFCramSolver(DepSystemSolver):
     Method (CRAM), as described in the following paper: M. Pusa, "`Higher-Order
     Chebyshev Rational Approximation Method and Application to Burnup Equations
     <https://doi.org/10.13182/NSE15-26>`_," Nucl. Sci. Eng., 182:3, 297-318.
-
-    When `substeps` > 1, the time interval is split into `substeps` identical
-    sub-intervals and LU factorizations are reused across them, as described
-    in: A. Isotalo and M. Pusa, "`Improving the Accuracy of the Chebyshev
-    Rational Approximation Method Using Substeps
-    <https://doi.org/10.13182/NSE15-67>`_," Nucl. Sci. Eng., 183:1, 65-77.
 
     Parameters
     ----------
@@ -62,7 +55,7 @@ class IPFCramSolver(DepSystemSolver):
         self.theta = theta
         self.alpha0 = alpha0
 
-    def __call__(self, A, n0, dt, substeps=1):
+    def __call__(self, A, n0, dt):
         """Solve depletion equations using IPF CRAM
 
         Parameters
@@ -75,8 +68,6 @@ class IPFCramSolver(DepSystemSolver):
             material or an atom density
         dt : float
             Time [s] of the specific interval to be solved
-        substeps : int, optional
-            Number of substeps per depletion interval.
 
         Returns
         -------
@@ -84,25 +75,12 @@ class IPFCramSolver(DepSystemSolver):
             Final compositions after ``dt``
 
         """
-        check_type("substeps", substeps, numbers.Integral)
-        check_greater_than("substeps", substeps, 0)
-
-        step_dt = dt if substeps == 1 else dt / substeps
-        A = step_dt * csc_array(A, dtype=np.float64)
-        ident = eye_array(A.shape[0], format='csc')
-
-        if substeps == 1:
-            solvers = [partial(spsolve, A - theta * ident) for theta in self.theta]
-        else:
-            # Pre-compute LU factorizations and reuse them across substeps.
-            solvers = [splu(A - theta * ident).solve for theta in self.theta]
-
+        A = dt * csc_array(A, dtype=np.float64)
         y = n0.copy()
-        for _ in range(substeps):
-            for alpha, solve in zip(self.alpha, solvers):
-                y += 2 * np.real(alpha * solve(y))
-            y *= self.alpha0
-        return y
+        ident = eye_array(A.shape[0], format='csc')
+        for alpha, theta in zip(self.alpha, self.theta):
+            y += 2*np.real(alpha*sla.spsolve(A - theta*ident, y))
+        return y * self.alpha0
 
 
 # Coefficients for IPF Cram 16

@@ -122,8 +122,7 @@ def model():
     return model
 
 
-@pytest.mark.parametrize("shared_secondary", [False, True])
-def test_weightwindows(model, wws, shared_secondary):
+def test_weightwindows(model, wws):
 
     ww_files = ('ww_n.txt', 'ww_p.txt')
     cwd = Path(__file__).parent.absolute()
@@ -132,7 +131,6 @@ def test_weightwindows(model, wws, shared_secondary):
     with cdtemp(filepaths):
         # run once with variance reduction off
         model.settings.weight_windows_on = False
-        model.settings.shared_secondary_bank = shared_secondary
         analog_sp = model.run()
         os.rename(analog_sp, 'statepoint.analog.h5')
 
@@ -225,8 +223,7 @@ def test_lower_ww_bounds_shape():
     assert ww.lower_ww_bounds.shape == (2, 3, 4, 1)
 
 
-@pytest.mark.parametrize("shared_secondary", [False, True])
-def test_photon_heating(run_in_tmpdir, shared_secondary):
+def test_photon_heating(run_in_tmpdir):
     water = openmc.Material()
     water.add_nuclide('H1', 1.0)
     water.add_nuclide('O16', 2.0)
@@ -250,7 +247,6 @@ def test_photon_heating(run_in_tmpdir, shared_secondary):
     model.settings.run_mode = 'fixed source'
     model.settings.batches = 5
     model.settings.particles = 100
-    model.settings.shared_secondary_bank = shared_secondary
 
     tally = openmc.Tally()
     tally.scores = ['heating']
@@ -264,11 +260,7 @@ def test_photon_heating(run_in_tmpdir, shared_secondary):
     with openmc.StatePoint(sp_file) as sp:
         tally_mean = sp.tallies[tally.id].mean
 
-    # Note: Our current physics model actually does allow this tally to
-    # occasionally go slightly negative. However, larger bugs can
-    # make this more common. We have selected a particle count for
-    # this test that happens to produce no negative tallies for both
-    # the shared and non-shared secondary PRNG streams.
+    # these values should be nearly identical
     assert np.all(tally_mean >= 0)
 
 
@@ -354,9 +346,9 @@ def test_unstructured_mesh_applied_wws(request, run_in_tmpdir, library):
     they aren't part of a tally or weight window generator
     """
 
-    if library == 'libmesh' and not openmc.lib.feature_enabled('libmesh'):
+    if library == 'libmesh' and not openmc.lib._libmesh_enabled():
         pytest.skip('LibMesh not enabled in this build.')
-    if library == 'moab' and not openmc.lib.feature_enabled('dagmc'):
+    if library == 'moab' and not openmc.lib._dagmc_enabled():
         pytest.skip('DAGMC (and MOAB) mesh not enabled in this build.')
 
     water = openmc.Material(name='water')

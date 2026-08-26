@@ -4,7 +4,7 @@ import openmc
 import openmc.lib
 
 pytestmark = pytest.mark.skipif(
-    not openmc.lib.feature_enabled('dagmc'),
+    not openmc.lib._dagmc_enabled(),
     reason="DAGMC CAD geometry is not enabled.",
 )
 

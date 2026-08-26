@@ -78,7 +78,6 @@ class EnergyGroups:
     @group_edges.setter
     def group_edges(self, edges):
         cv.check_type('group edges', edges, Iterable, Real)
-        cv.check_increasing('group edges', edges)
         cv.check_greater_than('number of group edges', len(edges), 1)
         self._group_edges = np.array(edges)
 
@@ -310,7 +309,7 @@ def convert_flux_groups(flux, source_groups, target_groups):
     unit lethargy within each source group and distributes flux to target
     groups proportionally to their lethargy width.
 
-    .. versionadded:: 0.16.0
+    .. versionadded:: 0.15.4
 
     Parameters
     ----------
@@ -348,9 +347,8 @@ def convert_flux_groups(flux, source_groups, target_groups):
     -----
     The assumption of constant flux per unit lethargy within each source
     group is physically reasonable for most reactor spectra but is not
-    exact [1]_. For best accuracy, use source spectra with sufficiently fine
-    energy resolution. A similar group-conversion approach is available in
-    FISPACT-II [2]_.
+    exact. For best accuracy, use source spectra with sufficiently fine
+    energy resolution.
 
     Examples
     --------

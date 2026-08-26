@@ -155,8 +155,9 @@ CorrelatedAngleEnergy::CorrelatedAngleEnergy(hid_t group)
     distribution_.push_back(std::move(d));
   } // incoming energies
 }
-Distribution& CorrelatedAngleEnergy::sample_dist(
-  double E_in, double& E_out, uint64_t* seed) const
+
+void CorrelatedAngleEnergy::sample(
+  double E_in, double& E_out, double& mu, uint64_t* seed) const
 {
   // Find energy bin and calculate interpolation factor
   int i;
@@ -199,7 +200,7 @@ Distribution& CorrelatedAngleEnergy::sample_dist(
   }
 
   // Continuous portion
-  double c_k1 {INFINITY};
+  double c_k1;
   for (int j = n_discrete; j < end; ++j) {
     k = j;
     c_k1 = distribution_[l].c[k + 1];
@@ -248,22 +249,10 @@ Distribution& CorrelatedAngleEnergy::sample_dist(
   // Find correlated angular distribution for closest outgoing energy bin
   if (r1 - c_k < c_k1 - r1 ||
       distribution_[l].interpolation == Interpolation::histogram) {
-    return *distribution_[l].angle[k];
+    mu = distribution_[l].angle[k]->sample(seed).first;
   } else {
-    return *distribution_[l].angle[k + 1];
+    mu = distribution_[l].angle[k + 1]->sample(seed).first;
   }
-}
-
-void CorrelatedAngleEnergy::sample(
-  double E_in, double& E_out, double& mu, uint64_t* seed) const
-{
-  mu = sample_dist(E_in, E_out, seed).sample(seed).first;
-}
-
-double CorrelatedAngleEnergy::sample_energy_and_pdf(
-  double E_in, double mu, double& E_out, uint64_t* seed) const
-{
-  return sample_dist(E_in, E_out, seed).evaluate(mu);
 }
 
 } // namespace openmc

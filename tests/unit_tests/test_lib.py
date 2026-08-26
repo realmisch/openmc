@@ -251,9 +251,9 @@ def test_material(lib_init):
     m.name = "Not hot borated water"
     assert m.name == "Not hot borated water"
 
-    assert not m.depletable
+    assert m.depletable == False
     m.depletable = True
-    assert m.depletable
+    assert m.depletable == True
 
 
 def test_properties_density(lib_init):
@@ -313,15 +313,6 @@ def test_settings(lib_init):
     assert settings.seed == 1
     assert settings.event_based is False
     settings.seed = 11
-
-
-def test_feature_enabled():
-    assert isinstance(openmc.lib.feature_enabled('dagmc'), bool)
-    assert isinstance(openmc.lib.feature_enabled('libmesh'), bool)
-    assert isinstance(openmc.lib.feature_enabled('strict_fp'), bool)
-    assert isinstance(openmc.lib.feature_enabled('uwuw'), bool)
-    with pytest.raises(exc.InvalidArgumentError, match="Unknown build feature"):
-        openmc.lib.feature_enabled('not-a-feature')
 
 
 def test_tally_mapping(lib_init):
@@ -904,23 +895,22 @@ def test_load_nuclide(lib_init):
         openmc.lib.load_nuclide('Pu3')
 
 
-class LegacySlicePlot:
-    origin = (0.0, 0.0, 0.0)
-    width = 1.26
-    height = 1.26
-    basis = 'xy'
-    h_res = 3
-    v_res = 3
-    level = -1
-
-
 def test_id_map(lib_init):
     expected_ids = np.array([[(3, 0, 3), (2, 0, 2), (3, 0, 3)],
                              [(2, 0, 2), (1, 0, 1), (2, 0, 2)],
                              [(3, 0, 3), (2, 0, 2), (3, 0, 3)]], dtype='int32')
 
-    with pytest.warns(FutureWarning, match="deprecated"):
-        ids = openmc.lib.id_map(LegacySlicePlot())
+    # create a plot object
+    s = openmc.lib.plot._PlotBase()
+    s.width = 1.26
+    s.height = 1.26
+    s.v_res = 3
+    s.h_res = 3
+    s.origin = (0.0, 0.0, 0.0)
+    s.basis = 'xy'
+    s.level = -1
+
+    ids = openmc.lib.plot.id_map(s)
     assert np.array_equal(expected_ids, ids)
 
 
@@ -930,24 +920,17 @@ def test_property_map(lib_init):
          [ (293.6, 6.55), (293.6, 10.29769),  (293.6, 6.55)],
          [(293.6, 0.740582), (293.6, 6.55), (293.6, 0.740582)]], dtype='float')
 
-    with pytest.warns(FutureWarning, match="deprecated"):
-        properties = openmc.lib.property_map(LegacySlicePlot())
-    assert np.allclose(expected_properties, properties, atol=1e-04)
+    # create a plot object
+    s = openmc.lib.plot._PlotBase()
+    s.width = 1.26
+    s.height = 1.26
+    s.v_res = 3
+    s.h_res = 3
+    s.origin = (0.0, 0.0, 0.0)
+    s.basis = 'xy'
+    s.level = -1
 
-
-def test_slice_data(lib_init):
-    expected_properties = np.array(
-        [[(293.6, 0.740582), (293.6, 6.55), (293.6, 0.740582)],
-         [ (293.6, 6.55), (293.6, 10.29769),  (293.6, 6.55)],
-         [(293.6, 0.740582), (293.6, 6.55), (293.6, 0.740582)]], dtype='float')
-    origin = (0.0, 0.0, 0.0)
-    _, properties = openmc.lib.slice_data(
-        origin,
-        width=(1.26, 1.26),
-        basis='xy',
-        pixels=(3, 3),
-        include_properties=True
-    )
+    properties = openmc.lib.plot.property_map(s)
     assert np.allclose(expected_properties, properties, atol=1e-04)
 
 
@@ -1130,14 +1113,6 @@ def test_sample_external_source(run_in_tmpdir, mpi_intracomm):
         assert p1.E == p2.E
         assert p1.time == p2.time
         assert p1.wgt == p2.wgt
-
-    # as_array should return a numpy structured array with matching values
-    arr = openmc.lib.sample_external_source(10, prn_seed=3, as_array=True)
-    assert isinstance(arr, np.ndarray)
-    assert len(arr) == 10
-    for p, row in zip(particles, arr):
-        assert p.r == pytest.approx(row['r'])
-        assert p.E == pytest.approx(row['E'])
 
     openmc.lib.finalize()
 

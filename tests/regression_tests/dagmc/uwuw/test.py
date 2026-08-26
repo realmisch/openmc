@@ -6,7 +6,7 @@ import pytest
 from tests.testing_harness import PyAPITestHarness
 
 pytestmark = pytest.mark.skipif(
-    not openmc.lib.feature_enabled('uwuw'),
+    not openmc.lib._uwuw_enabled(),
     reason="UWUW is not enabled.")
 
 class UWUWTest(PyAPITestHarness):

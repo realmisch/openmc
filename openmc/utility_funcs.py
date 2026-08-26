@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-from contextvars import ContextVar
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,19 +7,6 @@ import h5py
 
 import openmc
 from .checkvalue import PathLike
-
-
-_XML_INPUT_PATH = ContextVar('_XML_INPUT_PATH', default=None)
-
-
-@contextmanager
-def set_xml_input_path(path: PathLike):
-    """Set the containing XML directory for resolving input paths."""
-    token = _XML_INPUT_PATH.set(Path(path).resolve().parent)
-    try:
-        yield
-    finally:
-        _XML_INPUT_PATH.reset(token)
 
 
 @contextmanager
@@ -70,11 +56,7 @@ def input_path(filename: PathLike) -> Path:
 
     """
     if openmc.config['resolve_paths']:
-        path = Path(filename)
-        xml_dir = _XML_INPUT_PATH.get()
-        if xml_dir is not None and not path.is_absolute():
-            path = xml_dir / path
-        return path.resolve()
+        return Path(filename).resolve()
     else:
         return Path(filename)
 

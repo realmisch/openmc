@@ -49,9 +49,6 @@ extern const RegularMesh* ufs_mesh;
 extern vector<double> k_generation;
 extern vector<int64_t> work_index;
 
-extern int64_t
-  simulation_tracks_completed; //!< Number of tracks completed on this rank
-
 } // namespace simulation
 
 //==============================================================================
@@ -62,7 +59,7 @@ extern int64_t
 void allocate_banks();
 
 //! Determine number of particles to transport per process
-void calculate_work(int64_t n_particles);
+void calculate_work();
 
 //! Initialize nuclear data before a simulation
 void initialize_data();
@@ -73,9 +70,8 @@ void initialize_batch();
 //! Initialize a fission generation
 void initialize_generation();
 
-//! Full initialization of a particle track
-void initialize_particle_track(
-  Particle& p, int64_t index_source, bool is_secondary);
+//! Full initialization of a particle history
+void initialize_history(Particle& p, int64_t index_source);
 
 //! Finalize a batch
 //!
@@ -96,34 +92,15 @@ void broadcast_results();
 
 void free_memory_simulation();
 
-//! Compute unique particle ID from a 1-based source index
-//! \param index_source 1-based source index within this rank's work
-//! \return globally unique particle ID
-int64_t compute_particle_id(int64_t index_source);
-
-//! Compute the transport RNG seed from a particle ID
-//! \param particle_id the particle's globally unique ID
-//! \return seed value passed to init_particle_seeds()
-int64_t compute_transport_seed(int64_t particle_id);
-
-//! Simulate a single particle history from birth to death, inclusive of any
-//! secondary particles. In shared secondary mode, only a single track is
-//! transported and secondaries are deposited into a shared bank instead.
+//! Simulate a single particle history (and all generated secondary particles,
+//!  if enabled), from birth to death
 void transport_history_based_single_particle(Particle& p);
 
 //! Simulate all particle histories using history-based parallelism
 void transport_history_based();
 
-//! Simulate all particles using history-based parallelism, with a shared
-//! secondary bank
-void transport_history_based_shared_secondary();
-
 //! Simulate all particle histories using event-based parallelism
 void transport_event_based();
-
-//! Simulate all particles using event-based parallelism, with a shared
-//! secondary bank
-void transport_event_based_shared_secondary();
 
 } // namespace openmc
 

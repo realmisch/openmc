@@ -10,8 +10,8 @@ from openmc.mixin import EqualityMixin
 from openmc.stats import Univariate, Tabular, Uniform, Legendre
 from .function import INTERPOLATION_SCHEME
 from .data import EV_PER_MEV
-from .endf import as_evaluation, get_head_record, get_cont_record, \
-    get_tab1_record, get_list_record, get_tab2_record
+from .endf import get_head_record, get_cont_record, get_tab1_record, \
+    get_list_record, get_tab2_record
 
 
 class AngleDistribution(EqualityMixin):
@@ -213,7 +213,7 @@ class AngleDistribution(EqualityMixin):
 
         Parameters
         ----------
-        ev : openmc.data.endf.Evaluation or endf.Material
+        ev : openmc.data.endf.Evaluation
             ENDF evaluation
         mt : int
             The MT value of the reaction to get angular distributions for
@@ -224,7 +224,6 @@ class AngleDistribution(EqualityMixin):
             Angular distribution
 
         """
-        ev = as_evaluation(ev)
         file_obj = StringIO(ev.section[4, mt])
 
         # Read HEAD record
@@ -260,7 +259,7 @@ class AngleDistribution(EqualityMixin):
             for i in range(n_energy):
                 items, al = get_list_record(file_obj)
                 energy[i] = items[1]
-                coefficients = np.insert(al, 0, 1.0)
+                coefficients = np.asarray([1.0] + al)
                 mu.append(Legendre(coefficients))
 
         elif ltt == 2 and li == 0:
@@ -288,7 +287,7 @@ class AngleDistribution(EqualityMixin):
             for i in range(n_energy_legendre):
                 items, al = get_list_record(file_obj)
                 energy_legendre[i] = items[1]
-                coefficients = np.insert(al, 0, 1.0)
+                coefficients = np.asarray([1.0] + al)
                 mu.append(Legendre(coefficients))
 
             params, tab2 = get_tab2_record(file_obj)

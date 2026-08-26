@@ -291,33 +291,21 @@ void ThermalData::calculate_xs(
   *inelastic = (*inelastic_.xs)(E);
 }
 
-AngleEnergy& ThermalData::sample_dist(
-  const NuclideMicroXS& micro_xs, double E, uint64_t* seed) const
+void ThermalData::sample(const NuclideMicroXS& micro_xs, double E,
+  double* E_out, double* mu, uint64_t* seed)
 {
   // Determine whether inelastic or elastic scattering will occur
   if (prn(seed) < micro_xs.thermal_elastic / micro_xs.thermal) {
-    return *elastic_.distribution;
+    elastic_.distribution->sample(E, *E_out, *mu, seed);
   } else {
-    return *inelastic_.distribution;
+    inelastic_.distribution->sample(E, *E_out, *mu, seed);
   }
-}
 
-void ThermalData::sample(const NuclideMicroXS& micro_xs, double E,
-  double* E_out, double* mu, uint64_t* seed) const
-{
-  sample_dist(micro_xs, E, seed).sample(E, *E_out, *mu, seed);
   // Because of floating-point roundoff, it may be possible for mu to be
   // outside of the range [-1,1). In these cases, we just set mu to exactly
   // -1 or 1
   if (std::abs(*mu) > 1.0)
     *mu = std::copysign(1.0, *mu);
-}
-
-double ThermalData::sample_energy_and_pdf(const NuclideMicroXS& micro_xs,
-  double E_in, double mu, double& E_out, uint64_t* seed) const
-{
-  return sample_dist(micro_xs, E_in, seed)
-    .sample_energy_and_pdf(E_in, mu, E_out, seed);
 }
 
 void free_memory_thermal()

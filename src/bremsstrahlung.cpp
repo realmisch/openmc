@@ -26,30 +26,24 @@ vector<Bremsstrahlung> ttb;
 // Non-member functions
 //==============================================================================
 
-void thick_target_bremsstrahlung(Particle& p)
-{
-  thick_target_bremsstrahlung(p, p.type(), p.u(), p.E());
-}
-
-void thick_target_bremsstrahlung(
-  Particle& p, ParticleType type, Direction u, double E)
+void thick_target_bremsstrahlung(Particle& p, double* E_lost)
 {
   if (p.material() == MATERIAL_VOID)
     return;
 
   int photon = ParticleType::photon().transport_index();
-  if (E < settings::energy_cutoff[photon])
+  if (p.E() < settings::energy_cutoff[photon])
     return;
 
   // Get bremsstrahlung data for this material and particle type
   BremsstrahlungData* mat;
-  if (type == ParticleType::positron()) {
+  if (p.type() == ParticleType::positron()) {
     mat = &model::materials[p.material()]->ttb_->positron;
   } else {
     mat = &model::materials[p.material()]->ttb_->electron;
   }
 
-  double e = std::log(E);
+  double e = std::log(p.E());
   auto n_e = data::ttb_e_grid.size();
 
   // Find the lower bounding index of the incident electron energy
@@ -76,10 +70,9 @@ void thick_target_bremsstrahlung(
   // Sample number of secondary bremsstrahlung photons
   int n = y + prn(p.current_seed());
 
+  *E_lost = 0.0;
   if (n == 0)
     return;
-
-  double E_radiated = 0.0;
 
   // Sample index of the tabulated PDF in the energy grid, j or j+1
   double c_max;
@@ -121,13 +114,13 @@ void thick_target_bremsstrahlung(
     if (w > settings::energy_cutoff[photon]) {
       // If the energy of the secondary photon is larger than the remaining
       // energy of the primary particle, adjust it to the remaining energy
-      if (E_radiated + w > E) {
-        w = E - E_radiated;
+      if (*E_lost + w > p.E()) {
+        w = p.E() - *E_lost;
       }
 
       // Create secondary photon
-      p.create_secondary(p.wgt(), u, w, ParticleType::photon());
-      E_radiated += w;
+      p.create_secondary(p.wgt(), p.u(), w, ParticleType::photon());
+      *E_lost += w;
     }
   }
 }
