@@ -48,7 +48,7 @@ int sample_nuclide(Particle& p);
 
 //! Determine the average total, prompt, and delayed neutrons produced from
 //! fission and creates appropriate bank sites.
-void create_fission_sites(Particle& p, int i_nuclide, const vector<ReactionProduct>& products);
+void create_fission_sites(Particle& p, int i_nuclide, const Reaction& rx);
 
 int sample_element(Particle& p);
 
@@ -62,7 +62,7 @@ void absorption(Particle& p, int i_nuclide);
 void scatter(Particle& p, int i_nuclide);
 
 //! Treats the elastic scattering of a neutron with a target.
-void elastic_scatter(int i_nuclide, const ReactionProduct& product, double kT, Particle& p);
+void elastic_scatter(int i_nuclide, const Reaction& rxn, double kT, Particle& p);
 
 void sab_scatter(int i_nuclide, int i_sab, Particle& p);
 
@@ -81,7 +81,7 @@ Direction sample_cxs_target_velocity(
   double awr, double E, Direction u, double kT, uint64_t* seed);
 
 void sample_fission_neutron(
-  int i_nuclide, const vector<ReactionProduct>& products, SourceSite* site, Particle& p);
+  int i_nuclide, const Reaction& rx, SourceSite* site, Particle& p);
 
 //! handles all reactions with a single secondary neutron (other than fission),
 //! i.e. level scattering, (n,np), (n,na), etc.
