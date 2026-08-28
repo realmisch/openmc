@@ -82,7 +82,6 @@ bool uniform_source_sampling {false};
 bool ufs_on {false};
 bool urr_ptables_on {true};
 bool use_decay_photons {false};
-bool ue_grid {false};
 bool weight_windows_on {false};
 bool weight_window_checkpoint_surface {false};
 bool weight_window_checkpoint_collision {true};
@@ -137,6 +136,7 @@ int64_t ssw_max_particles;
 int64_t ssw_max_files;
 int64_t ssw_cell_id {C_NONE};
 SSWCellType ssw_cell_type {SSWCellType::None};
+UnionizationMethod ue_grid_method {UnionizationMethod::NONE};
 TemperatureMethod temperature_method {TemperatureMethod::NEAREST};
 double temperature_tolerance {10.0};
 double temperature_default {293.6};
@@ -735,14 +735,6 @@ void read_settings_xml(pugi::xml_node root)
     if (check_for_node(node_cutoff, "time_positron")) {
       time_cutoff[3] = std::stod(get_node_value(node_cutoff, "time_positron"));
     }
-    if (check_for_node(node_cutoff, "unionized_energy_grid")) {
-      ue_grid_cutoff = std::stod(get_node_value(node_cutoff, "unionized_energy_grid"));
-      if (ue_grid_cutoff <= 0.0) {
-        fatal_error(
-          "'ue_grid_cutoff' must be greater than 0."
-        );
-      }
-    }
   }
 
   // Particle trace
@@ -1119,11 +1111,29 @@ void read_settings_xml(pugi::xml_node root)
     }
   }
 
-  if (check_for_node(root, "unionized_energy_grid")) {
-    ue_grid = get_node_value_bool(root, "unionized_energy_grid");
-    if (ue_grid && !run_CE) {
+  if (check_for_node(root, "ue_grid_method")) {
+    auto temp = get_node_value(root, "ue_grid_method");
+    if (temp == "none") {
+      ue_grid_method = UnionizationMethod::NONE;
+    } else if (temp == "material") {
+      ue_grid_method = UnionizationMethod::MATERIAL;
+    } else if (temp == "global") {
+      ue_grid_method = UnionizationMethod::GLOBAL;
+    } else {
+      fatal_error("Unknown unionization method: " + temp);
+    }
+    if (ue_grid_method != UnionizationMethod::NONE && !run_CE) {
       fatal_error("Unionized energy grid must be used with "
                   "continuous energy cross sections.");
+    }
+  }
+
+  if (check_for_node(root, "ue_grid_cutoff")) {
+    ue_grid_cutoff = std::stod(get_node_value(root, "ue_grid_cutoff"));
+    if (ue_grid_cutoff <= 0.0) {
+      fatal_error(
+        "'ue_grid_cutoff' must be greater than 0."
+      );
     }
   }
 
@@ -1159,7 +1169,7 @@ void read_settings_xml(pugi::xml_node root)
       fatal_error("Multipole data cannot currently be used in conjunction with "
                   "photon transport.");
     }
-    if (temperature_multipole && ue_grid) {
+    if (temperature_multipole && ue_grid_method != UnionizationMethod::NONE) {
       fatal_error("Multipole data cannot be used with a unionized energy grid");
     }
   }

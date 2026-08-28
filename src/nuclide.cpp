@@ -2,6 +2,7 @@
 
 #include "openmc/capi.h"
 #include "openmc/container_util.h"
+#include "openmc/constants.h"
 #include "openmc/cross_sections.h"
 #include "openmc/endf.h"
 #include "openmc/error.h"
@@ -348,7 +349,7 @@ Nuclide::Nuclide(hid_t group, const vector<double>& temperature)
     close_group(fer_group);
   }
 
-  if (!settings::ue_grid)
+  if (settings::ue_grid_method == UnionizationMethod::NONE)
     this->create_derived(prompt_photons_.get(), delayed_photons_.get());
 }
 
@@ -495,12 +496,11 @@ void Nuclide::create_derived(
 }
 
 void Nuclide::create_ue_derived(
-  const Function1D* prompt_photons, const Function1D* delayed_photons) 
+  const Function1D* prompt_photons, const Function1D* delayed_photons, const vector<double>& ueg) 
 {
-  const auto& ueg = *data::union_e_grid;
   for (int t = 0; t < kTs_.size(); t++) {
     // Allocate and initialize cross section
-    xs_.push_back(tensor::zeros<double>({ueg.energy.size(), 5}));
+    xs_.push_back(tensor::zeros<double>({ueg.size(), 5}));
   }
 
   reaction_index_.fill(C_NONE);
@@ -518,7 +518,7 @@ void Nuclide::create_ue_derived(
       for (const auto& p : rx->products_) {
         if (p.particle_.is_photon()) {
           for (int k = 0; k < n; ++k) {
-            double E = ueg.energy[k + j];
+            double E = ueg[k + j];
 
             // For fission, artificially increase the photon yield to
             // account for delayed photons
@@ -576,9 +576,9 @@ void Nuclide::create_ue_derived(
   // Calculate nu-fission cross section
   for (int t = 0; t < kTs_.size(); ++t) {
     if (fissionable_) {
-      int n = ueg.energy.size();
+      int n = ueg.size();
       for (int i = 0; i < n; ++i) {
-        double E = ueg.energy[i];
+        double E = ueg[i];
         xs_[t](i, XS_NU_FISSION) =
           nu(E, EmissionMode::total) * xs_[t](i, XS_FISSION);
       }

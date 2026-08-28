@@ -11,6 +11,7 @@
 
 #include "openmc/bremsstrahlung.h"
 #include "openmc/constants.h"
+#include "openmc/energy_grid.h"
 #include "openmc/memory.h" // for unique_ptr
 #include "openmc/ncrystal_interface.h"
 #include "openmc/particle.h"
@@ -31,6 +32,12 @@ extern std::unordered_map<int32_t, int32_t> material_map;
 extern vector<unique_ptr<Material>> materials;
 
 } // namespace model
+
+namespace data {
+
+extern std::shared_ptr<EnergyGrid> ue_grid;
+
+} // namespace data
 
 //==============================================================================
 //! A substance with constituent nuclides and thermal scattering data
@@ -207,6 +214,8 @@ public:
   vector<ThermalTable> thermal_tables_;
 
   unique_ptr<Bremsstrahlung> ttb_;
+
+  EnergyGrid ue_grid_;
 
 private:
   //----------------------------------------------------------------------------

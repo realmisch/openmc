@@ -70,7 +70,7 @@ class Settings:
         dictionary may have the following keys, 'weight', 'weight_avg',
         'survival_normalization', 'energy_neutron', 'energy_photon',
         'energy_electron', 'energy_positron', 'time_neutron', 'time_photon',
-        'time_electron', 'time_positron', and 'unionized_energy_grid'. Value for 'weight' should be a
+        'time_electron', and 'time_positron'. Value for 'weight' should be a
         float indicating weight cutoff below which particle undergo Russian
         roulette. Value for 'weight_avg' should be a float indicating weight
         assigned to particles that are not killed after Russian roulette. Value
@@ -334,9 +334,15 @@ class Settings:
     ufs_mesh : openmc.RegularMesh
         Mesh to be used for redistributing source sites via the uniform fission
         site (UFS) method.
-    unionized_energy_grid : bool
-        Indicate whether a unionized energy grid should be constructed and used
-        for cross sections.
+    ue_grid : dict
+        Defines unionization parameters for cross section energy grids. Accepted
+        keys are 'method' and 'cutoff'. The value for 'method' should be 'none',
+        'global', or 'material'. If the method is 'none', no unionization is 
+        performed. If the method is 'global', energy grids are unionized across
+        all nuclides in the model. If the method is 'material', energy grids
+        are unionized within each material. For 'global' and 'material' methods,
+        'cutoff' indicates the relative tolerance for thinning grid points in
+        the unionized energy grids.
     use_decay_photons : bool
         Produce decay photons from neutron reactions instead of prompt
     verbosity : int
@@ -419,7 +425,7 @@ class Settings:
         self._ifp_n_generation = None
 
         #Unionized Energy Grid
-        self._unionized_energy_grid = None
+        self._ue_grid = {}
         # Collision track feature
         self._collision_track = {}
 
@@ -983,13 +989,27 @@ class Settings:
         self._ifp_n_generation = ifp_n_generation
 
     @property
-    def unionized_energy_grid(self) -> bool:
-        return self._unionized_energy_grid
+    def ue_grid(self) -> dict:
+        return self._ue_grid
 
-    @unionized_energy_grid.setter
-    def unionized_energy_grid(self, use_ueg: bool):
-        cv.check_type('use unionized energy grid option', use_ueg, bool)
-        self._unionized_energy_grid = use_ueg
+    @ue_grid.setter
+    def ue_grid(self, ue_grid: dict):
+        cv.check_type('unionized energy grid settings', ue_grid, Mapping)
+        for key, value in ue_grid.items():
+            cv.check_value('ue_grid key', key,
+                           ['method', 'cutoff'])
+            if key == 'method':
+                cv.check_value('ue_grid method', value,
+                               ['none', 'global', 'material'])
+            elif key == 'cutoff':
+                cv.check_type('ue_grid cutoff', value, Real)
+                cv.check_greater_than('ue_grid cutoff', value, 0.0)
+                if value > 1.0E-5:
+                    warnings.warn('The Unionized Energy Grid cutoff is set ' \
+                                   f'to {value:.2E}. Cutoffs above 1.0E-5 may' \
+                                   ' bias results.')
+
+        self._ue_grid = ue_grid
 
     @property
     def tabular_legendre(self) -> dict:
@@ -1092,12 +1112,6 @@ class Settings:
                          'energy_positron']:
                 cv.check_type('energy cutoff', cutoff[key], Real)
                 cv.check_greater_than('energy cutoff', cutoff[key], 0.0)
-            elif key == 'unionized_energy_grid':
-                cv.check_type('union energy grid cutoff', cutoff[key], Real)
-                cv.check_greater_than('union energy grid cutoff', cutoff[key], 0.0)
-                if cutoff[key] > 1.0E-5:
-                    warnings.warn(f'The Unionized Energy Grid cutoff is set to {cutoff[key]:.2E}. ' \
-                            'Cutoffs above 1.0E-5 may bias results.')
             else:
                 msg = f'Unable to set cutoff to "{key}" which is unsupported ' \
                     'by OpenMC'
@@ -1712,10 +1726,14 @@ class Settings:
             element = ET.SubElement(root, "ifp_n_generation")
             element.text = str(self._ifp_n_generation)
 
-    def _create_unionized_energy_grid_subelement(self, root):
-        if self._unionized_energy_grid not in [None, False]:
-            element = ET.SubElement(root, "unionized_energy_grid")
-            element.text = str(self._unionized_energy_grid)
+    def _create_ue_grid_subelement(self, root):
+        if self.ue_grid:
+            for key, value in sorted(self.ue_grid.items()):
+                element = ET.SubElement(root, f"ue_grid_{key}")
+                if isinstance(value, Real):
+                    element.text = str(value)
+                else:
+                    element.text = str(value).lower()
 
     def _create_tabular_legendre_subelements(self, root):
         if self.tabular_legendre:
@@ -2165,7 +2183,7 @@ class Settings:
             for key in ('energy_neutron', 'energy_photon', 'energy_electron',
                         'energy_positron', 'weight', 'weight_avg', 'time_neutron',
                         'time_photon', 'time_electron', 'time_positron',
-                        'survival_normalization', 'unionized_energy_grid'):
+                        'survival_normalization'):
                 value = get_text(elem, key)
                 if value is not None:
                     if key == 'survival_normalization':
@@ -2208,10 +2226,13 @@ class Settings:
         if text is not None:
             self.ifp_n_generation = int(text)
 
-    def _unionized_energy_grid_from_xml_element(self, root):
-        text = get_text(root, 'unionized_energy_grid')
+    def _ue_grid_from_xml_element(self, root):
+        text = get_text(root, 'ue_grid_method')
         if text is not None:
-            self.unionized_energy_grid = text in ('true', '1')
+            self.ue_grid['method'] = text
+        text = get_text(root, 'ue_grid_cutoff')
+        if text is not None:
+            self.ue_grid['cutoff'] = float(text)
 
     def _tabular_legendre_from_xml_element(self, root):
         elem = root.find('tabular_legendre')
@@ -2472,7 +2493,7 @@ class Settings:
         self._create_no_reduce_subelement(element)
         self._create_verbosity_subelement(element)
         self._create_ifp_n_generation_subelement(element)
-        self._create_unionized_energy_grid_subelement(element)
+        self._create_ue_grid_subelement(element)
         self._create_tabular_legendre_subelements(element)
         self._create_temperature_subelements(element)
         self._create_trace_subelement(element)
@@ -2587,7 +2608,7 @@ class Settings:
         settings._no_reduce_from_xml_element(elem)
         settings._verbosity_from_xml_element(elem)
         settings._ifp_n_generation_from_xml_element(elem)
-        settings._unionized_energy_grid_from_xml_element(elem)
+        settings._ue_grid_from_xml_element(elem)
         settings._tabular_legendre_from_xml_element(elem)
         settings._temperature_from_xml_element(elem)
         settings._trace_from_xml_element(elem)

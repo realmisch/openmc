@@ -761,11 +761,11 @@ void initialize_data()
     std::log(data::energy_max[neutron] / data::energy_min[neutron]) /
     settings::n_log_bins;
 
-  if (settings::ue_grid) {
-    data::union_e_grid = std::make_shared<EnergyGrid>();
+  if (settings::ue_grid_method != UnionizationMethod::NONE) {
+    if (settings::ue_grid_method == UnionizationMethod::GLOBAL)
+      data::ue_grid = std::make_shared<EnergyGrid>();
     create_union_energy_grid();
   }
-
 }
 
 #ifdef OPENMC_MPI

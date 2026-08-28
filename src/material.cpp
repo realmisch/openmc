@@ -13,6 +13,7 @@
 #include "openmc/capi.h"
 #include "openmc/container_util.h"
 #include "openmc/cross_sections.h"
+#include "openmc/constants.h"
 #include "openmc/error.h"
 #include "openmc/file_utils.h"
 #include "openmc/hdf5_interface.h"
@@ -26,6 +27,7 @@
 #include "openmc/simulation.h"
 #include "openmc/string_utils.h"
 #include "openmc/thermal.h"
+#include "openmc/ueg.h"
 #include "openmc/xml_interface.h"
 
 namespace openmc {
@@ -832,6 +834,28 @@ void Material::calculate_neutron_xs(Particle& p) const
   int i_grid =
     std::log(p.E() / data::energy_min[neutron]) / simulation::log_spacing;
 
+  if (data::use_ueg && p.ue_i_grid() == -1) {
+    const auto& ue_grid = (settings::ue_grid_method == UnionizationMethod::GLOBAL) ? *data::ue_grid : ue_grid_;
+    if (p.E() < ue_grid.energy.front()) {
+      p.ue_i_grid() = 0;
+      p.ue_f() = 0;
+    } else if (p.E() > ue_grid.energy.back()) {
+      p.ue_i_grid() = ue_grid.energy.size() - 2;
+      p.ue_f() = 1;
+    } else {
+      int i_low = ue_grid.grid_index[i_grid];
+      int i_high = ue_grid.grid_index[i_grid + 1] + 1;
+
+      int new_i_grid = i_low + lower_bound_index(
+        &ue_grid.energy[i_low], &ue_grid.energy[i_high], p.E());
+      if (ue_grid.energy[new_i_grid] == ue_grid.energy[new_i_grid + 1])
+        ++new_i_grid;
+      p.ue_f() = (p.E() - ue_grid.energy[new_i_grid]) /
+        (ue_grid.energy[new_i_grid + 1] - ue_grid.energy[new_i_grid]);
+      p.ue_i_grid() = new_i_grid;
+    }
+  }
+
   // Determine if this material has S(a,b) tables
   bool check_sab = (thermal_tables_.size() > 0);
 
@@ -883,27 +907,6 @@ void Material::calculate_neutron_xs(Particle& p) const
 
     // Update microscopic cross section for this nuclide
     if (data::use_ueg) {
-      if (p.ue_i_grid() == -1) {
-        const auto& ue_grid = *data::union_e_grid;
-        if (p.E() < ue_grid.energy.front()) {
-          p.ue_i_grid() = 0;
-          p.ue_f() = 0;
-        } else if (p.E() > ue_grid.energy.back()) {
-          p.ue_i_grid() = ue_grid.energy.size() - 2;
-          p.ue_f() = 1;
-        } else {
-          int i_low = ue_grid.grid_index[i_grid];
-          int i_high = ue_grid.grid_index[i_grid + 1] + 1;
-
-          int new_i_grid = i_low + lower_bound_index(
-            &ue_grid.energy[i_low], &ue_grid.energy[i_high], p.E());
-          if (ue_grid.energy[new_i_grid] == ue_grid.energy[new_i_grid + 1])
-            ++new_i_grid;
-          p.ue_f() = (p.E() - ue_grid.energy[new_i_grid]) /
-            (ue_grid.energy[new_i_grid + 1] - ue_grid.energy[new_i_grid]);
-          p.ue_i_grid() = new_i_grid;
-        }
-      }
       p.update_neutron_ue_xs(i_nuclide, i_sab, sab_frac, ncrystal_xs);
     } else {
       p.update_neutron_xs(i_nuclide, i_grid, i_sab, sab_frac, ncrystal_xs);

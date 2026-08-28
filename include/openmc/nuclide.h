@@ -84,7 +84,7 @@ public:
     span<const double> flux) const;
 
   void create_ue_derived(
-    const Function1D* prompt_photons, const Function1D* delayed_photons);
+    const Function1D* prompt_photons, const Function1D* delayed_photons, const vector<double>& ueg);
 
   //============================================================================
   // Data members

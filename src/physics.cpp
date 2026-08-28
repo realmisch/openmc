@@ -154,7 +154,7 @@ void sample_neutron_reaction(Particle& p)
   // Advance URR seed stream 'N' times after energy changes
   if (p.E() != p.E_last()) {
     advance_prn_seed(data::nuclides.size(), &p.seeds(STREAM_URR_PTABLE));
-    if (settings::ue_grid)
+    if (settings::ue_grid_method != UnionizationMethod::NONE)
       p.ue_i_grid() = -1;
   }
 
