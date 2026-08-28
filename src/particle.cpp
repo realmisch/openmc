@@ -216,6 +216,8 @@ void Particle::event_calculate_xs()
         // If the material is the same as the last material and the
         // temperature hasn't changed, we don't need to lookup cross
         // sections again.
+        if (settings::ue_grid_method == UnionizationMethod::MATERIAL && material() != material_last())
+          p.ue_i_grid = -1;
         model::materials[material()]->calculate_xs(*this);
       }
     } else {

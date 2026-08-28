@@ -102,6 +102,8 @@ constexpr double C_LIGHT {2.99792458e10};      // speed of light in cm/s
 constexpr double N_AVOGADRO {0.602214076};     // Avogadro's number in 10^24/mol
 constexpr double K_BOLTZMANN {8.617333262e-5}; // Boltzmann constant in eV/K
 
+constexpr double BYTES_TO_GIGABYTES {9.3132257462e-10}; //Convert bytes to Gigabytes
+
 // Electron subshell labels
 constexpr array<const char*, 39> SUBSHELLS = {"K", "L1", "L2", "L3", "M1", "M2",
   "M3", "M4", "M5", "N1", "N2", "N3", "N4", "N5", "N6", "N7", "O1", "O2", "O3",

@@ -95,7 +95,7 @@ namespace openmc {
     for (const auto& nuc : nuclides) {
       num_temps += nuc->kTs_.size();
       for (int t = 0; t < nuc->kTs_.size(); t++) {
-         vector<double>& energies = nuc->grid_[t].energy;
+         vector<double>& energies = nuc->grid_[t].energy; 
          ueg.insert(ueg.end(), energies.begin(), energies.end());
         /*
         //Add URR energies to important energy grid
@@ -171,7 +171,7 @@ namespace openmc {
     }
 
 
-    double mem_size = (double)(ueg.size()*num_temps) * 12.0 / 1073741824.0;
+    double mem_size = (double)(ueg.size()*num_temps)*sizeof(double)*BYTES_TO_GIGABYTES;
     return mem_size;
   }
-} // namespace openmc
+} // namespace openmc w
