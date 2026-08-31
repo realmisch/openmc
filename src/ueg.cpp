@@ -55,7 +55,7 @@ namespace openmc {
         }
         max_grid_size = ueg.size() > max_grid_size ? ueg.size() : max_grid_size;
       }
-      write_message("Material-Wise Energy Grid Unionization performed with up to {} grid points", std::to_string(max_grid_size));
+      write_message("Material Unionized Energy Grid: {} grid points - {} GB of memory", max_grid_size, mem_size);
     } else if (settings::ue_grid_method == UnionizationMethod::GLOBAL) {
       vector<double>& ueg = data::ue_grid->energy;
       vector<int>& ueg_index = data::ue_grid->grid_index;
@@ -74,7 +74,7 @@ namespace openmc {
         }
         ueg_index[k] = j;
       }
-      write_message("Global Energy Grid performed with {} grid points", ueg.size());
+      write_message("Global Unionized Energy Grid: {} grid points - {:.3f} GB of memory", ueg.size(), mem_size);
     }
     if (mem_size > 10)
       warning(fmt::format("{} GB required for Unionized Energy Grid cross sections", mem_size));
@@ -90,10 +90,10 @@ namespace openmc {
     //imp_e_grid will contain energy points that should not be thinned (URR and Sab energies)
     vector<double> imp_e_grid {E_min, E_max};
 
-    int num_temps;
+    int num_temps = 0;
     //Get energies from all nuclides
     for (const auto& nuc : nuclides) {
-      num_temps += nuc->kTs_.size();
+      num_temps += nuc->kTs_.size()*nuc->reactions_.size();
       for (int t = 0; t < nuc->kTs_.size(); t++) {
          vector<double>& energies = nuc->grid_[t].energy; 
          ueg.insert(ueg.end(), energies.begin(), energies.end());
@@ -170,7 +170,7 @@ namespace openmc {
       nuc->create_ue_derived(nuc->prompt_photons_.get(), nuc->delayed_photons_.get(), ueg);
     }
 
-
+    write_message("Num points : {} | Num temps : {} | sizeof double : {}", std::to_string(ueg.size()), std::to_string(num_temps), std::to_string(sizeof(double)));
     double mem_size = (double)(ueg.size()*num_temps)*sizeof(double)*BYTES_TO_GIGABYTES;
     return mem_size;
   }
