@@ -89,19 +89,44 @@ namespace openmc {
 
     //imp_e_grid will contain energy points that should not be thinned (URR and Sab energies)
     vector<double> imp_e_grid {E_min, E_max};
+    vector<double> buffer;
 
     int num_temps = 0;
     //Get energies from all nuclides
     for (const auto& nuc : nuclides) {
       num_temps += nuc->kTs_.size()*nuc->reactions_.size();
       for (int t = 0; t < nuc->kTs_.size(); t++) {
-         vector<double>& energies = nuc->grid_[t].energy; 
-         ueg.insert(ueg.end(), energies.begin(), energies.end());
+        const vector<double>& energies = nuc->grid_[t].energy; 
+        buffer.clear();
+        buffer.reserve(ueg.size() + energies.size());
+
+        size_t i = 0;
+        size_t j = 0;
+
+        while (i < ueg.size() && j < energies.size()) {
+          if (ueg[i] < energies[j]) {
+            buffer.push_back(ueg[i++]);
+          } else if (energies[j] < ueg[i]) {
+            buffer.push_back(energies[j++]);
+          } else {
+            buffer.push_back(ueg[i]);
+            ++i;
+            ++j;
+          }
+        }
+
+        while (i < ueg.size())
+          buffer.push_back(ueg[i++]);
+
+        while (j < energies.size())
+          buffer.push_back(energies[j++]);
+
+        ueg.swap(buffer);
         /*
         //Add URR energies to important energy grid
-         if (nuclide->urr_present_) {
-          const auto& urr_energies = nuclide->urr_data_[t].energy_;
-          imp_e_grid.insert(imp_e_grid.end(), urr_energies.begin(), urr_energies.end());
+        if (nuclide->urr_present_) {
+        const auto& urr_energies = nuclide->urr_data_[t].energy_;
+        imp_e_grid.insert(imp_e_grid.end(), urr_energies.begin(), urr_energies.end());
         }
         */
         //Add threshold energies to important energy grid
