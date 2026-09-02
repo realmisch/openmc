@@ -27,8 +27,6 @@ namespace openmc {
   } // namespace data
 
   void create_union_energy_grid() {
-    if (!mpi::master)
-      return;
 
     int neutron = ParticleType::neutron().transport_index();
     double E_min = data::energy_min[neutron];
