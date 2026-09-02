@@ -15,6 +15,10 @@
 #include "openmc/constants.h"
 #include "openmc/reaction.h"
 
+#ifdef OPENMC_MPI
+#include <mpi.h>
+#endif
+
 namespace openmc {
   namespace data {
     bool use_ueg = false;
@@ -22,6 +26,9 @@ namespace openmc {
   } // namespace data
 
   void create_union_energy_grid() {
+    if (!mpi::master)
+      return;
+
     int neutron = ParticleType::neutron().transport_index();
     double E_min = data::energy_min[neutron];
     double E_max = data::energy_max[neutron];
