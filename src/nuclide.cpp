@@ -1018,33 +1018,32 @@ void Nuclide::calculate_ue_xs(
     break;
   }
 
+  const auto& xs {xs_[i_temp]};
+
   int i_grid = p.ue_i_grid();
   double f = p.ue_f();
-
-  const auto& xs_low {xs_[i_temp](i_grid)};
-  const auto& xs_high {xs_[i_temp](i_grid + 1)};
 
   micro.index_temp = i_temp;
   micro.index_grid = i_grid;
   micro.interp_factor = f;
 
   micro.total = 
-    (1.0 - f) * xs_low(XS_TOTAL) + f * xs_high(XS_TOTAL);
+    (1.0 - f) * xs(i_grid, XS_TOTAL) + f * xs(i_grid + 1, XS_TOTAL);
   micro.absorption = 
-    (1.0 - f) * xs_low(XS_ABSORPTION) + f * xs_high(XS_ABSORPTION);
+    (1.0 - f) * xs(i_grid, XS_ABSORPTION) + f * xs(i_grid + 1, XS_ABSORPTION);
   if (fissionable_) {
     micro.fission =
-      (1.0 - f) * xs_low(XS_FISSION) + f * xs_high(XS_FISSION);
-    micro.nu_fission = (1.0 - f) * xs_low(XS_NU_FISSION) + 
-                       f * xs_high(XS_NU_FISSION); 
+      (1.0 - f) * xs(i_grid, XS_FISSION) + f * xs(i_grid + 1, XS_FISSION);
+    micro.nu_fission = (1.0 - f) * xs(i_grid, XS_NU_FISSION) + 
+                       f * xs(i_grid + 1, XS_NU_FISSION); 
   } else {
     micro.fission = 0.0;
     micro.nu_fission = 0.0;
   }
 
   // Calculate microscopic nuclide photon production cross section
-  micro.photon_prod = (1.0 - f) * xs_low(XS_PHOTON_PROD) +
-                        f * xs_high(XS_PHOTON_PROD);
+  micro.photon_prod = (1.0 - f) * xs(i_grid, XS_PHOTON_PROD) +
+                        f * xs(i_grid + 1, XS_PHOTON_PROD);
 
   // Depletion-related reactions
   if (simulation::need_depletion_rx) {
