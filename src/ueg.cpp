@@ -39,11 +39,7 @@ namespace openmc {
         vector<double>& ueg = mat->ue_grid_.energy;
         vector<int>& ueg_index = mat->ue_grid_.grid_index;
 
-        vector<Nuclide *> temp_nuclides;
-        for (auto& nuc : mat->nuclide_)
-          temp_nuclides.push_back(data::nuclides[nuc].get());
-
-        mem_size += unionize_nuclides(temp_nuclides, ueg);
+        mem_size += unionize_nuclides(ueg);
         ueg_index.resize(M + 1); 
         int j = 0;
         for (int k = 0; k <= M; ++k) {
@@ -59,12 +55,8 @@ namespace openmc {
     } else if (settings::ue_grid_method == UnionizationMethod::GLOBAL) {
       vector<double>& ueg = data::ue_grid->energy;
       vector<int>& ueg_index = data::ue_grid->grid_index;
-        
-      vector<Nuclide *> temp_nuclides;
-      for (auto& nuc : data::nuclides)
-        temp_nuclides.push_back(nuc.get());
 
-      mem_size = unionize_nuclides(temp_nuclides, ueg);
+      mem_size = unionize_nuclides(ueg);
       ueg_index.resize(M + 1); 
       int j = 0;
       for (int k = 0; k <= M; ++k) {
@@ -81,7 +73,7 @@ namespace openmc {
     data::use_ueg = true;
   }
   
-  double unionize_nuclides(vector<Nuclide *>& nuclides, vector<double>& ueg) 
+  double unionize_nuclides(vector<double>& ueg) 
   {
     int neutron = ParticleType::neutron().transport_index();
     double E_min = data::energy_min[neutron];
@@ -93,7 +85,7 @@ namespace openmc {
 
     int num_temps = 0;
     //Get energies from all nuclides
-    for (const auto& nuc : nuclides) {
+    for (const auto& nuc : data::nuclides) {
       num_temps += nuc->kTs_.size()*nuc->reactions_.size();
       for (int t = 0; t < nuc->kTs_.size(); t++) {
         const vector<double>& energies = nuc->grid_[t].energy; 
@@ -170,7 +162,7 @@ namespace openmc {
     const auto e = tensor::Tensor<double>(ueg.data(), ueg.size());
 
     //Iterate through all nuclides to update XS
-    for (auto & nuc : nuclides) {
+    for (auto & nuc : data::nuclides) {
       auto & grid = nuc->grid_;
       //Interpolate XS for each nuclide temperature and reaction
       for (auto& rxn : nuc->reactions_) {

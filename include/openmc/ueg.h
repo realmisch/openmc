@@ -11,7 +11,7 @@
 
 namespace openmc {
   void create_union_energy_grid();
-  double unionize_nuclides(vector<Nuclide *>& nuclides, vector<double>& ueg);
+  double unionize_nuclides(vector<double>& ueg);
 } // namespace openmc
 
 #endif // OPENMC_UEG_H
