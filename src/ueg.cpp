@@ -14,6 +14,7 @@
 
 #include "openmc/constants.h"
 #include "openmc/reaction.h"
+#include "openmc/message_passing.h"
 
 #ifdef OPENMC_MPI
 #include <mpi.h>
