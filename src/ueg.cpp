@@ -12,7 +12,6 @@
 #include "openmc/vector.h"
 #include "openmc/tensor.h"
 
-#include "openmc/constants.h"
 #include "openmc/reaction.h"
 #include "openmc/message_passing.h"
 
@@ -39,41 +38,21 @@ namespace openmc {
     settings::energy_cutoff[0] = std::max(E_min, settings::energy_cutoff[0]);
     
     double mem_size = 0.0;
-    if (settings::ue_grid_method == UnionizationMethod::MATERIAL) {
-      int max_grid_size = 1;
-      for (auto& mat : model::materials) {
-        vector<double>& ueg = mat->ue_grid_.energy;
-        vector<int>& ueg_index = mat->ue_grid_.grid_index;
+    
+    vector<double>& ueg = data::ue_grid->energy;
+    vector<int>& ueg_index = data::ue_grid->grid_index;
 
-        mem_size += unionize_nuclides(ueg);
-        ueg_index.resize(M + 1); 
-        int j = 0;
-        for (int k = 0; k <= M; ++k) {
-          while (std::log(ueg[j + 1] / E_min) <= log_mesh[k]) {
-            if (j + 2 == ueg.size()) break;
-            ++j;
-          }
-          ueg_index[k] = j;
-        }
-        max_grid_size = ueg.size() > max_grid_size ? ueg.size() : max_grid_size;
+    mem_size = unionize_nuclides(ueg);
+    ueg_index.resize(M + 1); 
+    int j = 0;
+    for (int k = 0; k <= M; ++k) {
+      while (std::log(ueg[j + 1] / E_min) <= log_mesh[k]) {
+        if (j + 2 == ueg.size()) break;
+        ++j;
       }
-      write_message("Material Unionized Energy Grid: {} grid points - {} GB of memory", max_grid_size, mem_size);
-    } else if (settings::ue_grid_method == UnionizationMethod::GLOBAL) {
-      vector<double>& ueg = data::ue_grid->energy;
-      vector<int>& ueg_index = data::ue_grid->grid_index;
-
-      mem_size = unionize_nuclides(ueg);
-      ueg_index.resize(M + 1); 
-      int j = 0;
-      for (int k = 0; k <= M; ++k) {
-        while (std::log(ueg[j + 1] / E_min) <= log_mesh[k]) {
-          if (j + 2 == ueg.size()) break;
-          ++j;
-        }
-        ueg_index[k] = j;
-      }
-      write_message("Global Unionized Energy Grid: {} grid points - {:.3f} GB of memory", ueg.size(), mem_size);
+      ueg_index[k] = j;
     }
+    write_message("Global Unionized Energy Grid: {} grid points - {:.3f} GB of memory", ueg.size(), mem_size);
     if (mem_size > 10)
       warning(fmt::format("{} GB required for Unionized Energy Grid cross sections", mem_size));
     data::use_ueg = true;

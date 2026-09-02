@@ -335,14 +335,10 @@ class Settings:
         Mesh to be used for redistributing source sites via the uniform fission
         site (UFS) method.
     ue_grid : dict
-        Defines unionization parameters for cross section energy grids. Accepted
-        keys are 'method' and 'cutoff'. The value for 'method' should be 'none',
-        'global', or 'material'. If the method is 'none', no unionization is 
-        performed. If the method is 'global', energy grids are unionized across
-        all nuclides in the model. If the method is 'material', energy grids
-        are unionized within each material. For 'global' and 'material' methods,
-        'cutoff' indicates the relative tolerance for thinning grid points in
-        the unionized energy grids.
+        Defines global unionization parameters for cross section energy grids. 
+        Accepted keys are 'method' and 'cutoff'. The value for 'method' should 
+        be True or False. If the unionized energy grid is enabled, 'cutoff' indicates 
+        the relative tolerance for thinning grid points in the unionized energy grids.
     use_decay_photons : bool
         Produce decay photons from neutron reactions instead of prompt
     verbosity : int
@@ -999,8 +995,7 @@ class Settings:
             cv.check_value('ue_grid key', key,
                            ['method', 'cutoff'])
             if key == 'method':
-                cv.check_value('ue_grid method', value,
-                               ['none', 'global', 'material'])
+                cv.check_type('ue_grid method', value, bool)
             elif key == 'cutoff':
                 cv.check_type('ue_grid cutoff', value, Real)
                 cv.check_greater_than('ue_grid cutoff', value, 0.0)

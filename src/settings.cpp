@@ -79,6 +79,7 @@ bool temperature_multipole {false};
 bool trigger_on {false};
 bool trigger_predict {false};
 bool uniform_source_sampling {false};
+bool ue_grid_method {false};
 bool ufs_on {false};
 bool urr_ptables_on {true};
 bool use_decay_photons {false};
@@ -136,7 +137,6 @@ int64_t ssw_max_particles;
 int64_t ssw_max_files;
 int64_t ssw_cell_id {C_NONE};
 SSWCellType ssw_cell_type {SSWCellType::None};
-UnionizationMethod ue_grid_method {UnionizationMethod::NONE};
 TemperatureMethod temperature_method {TemperatureMethod::NEAREST};
 double temperature_tolerance {10.0};
 double temperature_default {293.6};
@@ -1112,17 +1112,8 @@ void read_settings_xml(pugi::xml_node root)
   }
 
   if (check_for_node(root, "ue_grid_method")) {
-    auto temp = get_node_value(root, "ue_grid_method");
-    if (temp == "none") {
-      ue_grid_method = UnionizationMethod::NONE;
-    } else if (temp == "material") {
-      ue_grid_method = UnionizationMethod::MATERIAL;
-    } else if (temp == "global") {
-      ue_grid_method = UnionizationMethod::GLOBAL;
-    } else {
-      fatal_error("Unknown unionization method: " + temp);
-    }
-    if (ue_grid_method != UnionizationMethod::NONE && !run_CE) {
+    ue_grid_method = get_node_value_bool(root, "ue_grid_method");
+    if (!run_CE) {
       fatal_error("Unionized energy grid must be used with "
                   "continuous energy cross sections.");
     }
@@ -1169,7 +1160,7 @@ void read_settings_xml(pugi::xml_node root)
       fatal_error("Multipole data cannot currently be used in conjunction with "
                   "photon transport.");
     }
-    if (temperature_multipole && ue_grid_method != UnionizationMethod::NONE) {
+    if (temperature_multipole && ue_grid_method == true) {
       fatal_error("Multipole data cannot be used with a unionized energy grid");
     }
   }

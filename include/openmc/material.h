@@ -215,8 +215,6 @@ public:
 
   unique_ptr<Bremsstrahlung> ttb_;
 
-  EnergyGrid ue_grid_;
-
 private:
   //----------------------------------------------------------------------------
   // Private methods

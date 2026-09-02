@@ -349,7 +349,7 @@ Nuclide::Nuclide(hid_t group, const vector<double>& temperature)
     close_group(fer_group);
   }
 
-  if (settings::ue_grid_method == UnionizationMethod::NONE)
+  if (!settings::ue_grid_method)
     this->create_derived(prompt_photons_.get(), delayed_photons_.get());
 }
 

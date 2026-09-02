@@ -835,7 +835,7 @@ void Material::calculate_neutron_xs(Particle& p) const
     std::log(p.E() / data::energy_min[neutron]) / simulation::log_spacing;
 
   if (data::use_ueg && p.ue_i_grid() == -1) {
-    const auto& ue_grid = (settings::ue_grid_method == UnionizationMethod::GLOBAL) ? *data::ue_grid : ue_grid_;
+    const auto& ue_grid = *data::ue_grid;
     if (p.E() < ue_grid.energy.front()) {
       p.ue_i_grid() = 0;
       p.ue_f() = 0;
