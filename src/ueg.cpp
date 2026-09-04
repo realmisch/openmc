@@ -15,10 +15,6 @@
 #include "openmc/reaction.h"
 #include "openmc/message_passing.h"
 
-#ifdef OPENMC_MPI
-#include <mpi.h>
-#endif
-
 namespace openmc {
   namespace data {
     bool use_ueg = false;
@@ -37,16 +33,19 @@ namespace openmc {
 
     settings::energy_cutoff[0] = std::max(E_min, settings::energy_cutoff[0]);
     
-    double mem_size = 0.0;
-    
     vector<double>& ueg = data::ue_grid->energy;
     vector<int>& ueg_index = data::ue_grid->grid_index;
 
-    mem_size = unionize_nuclides(ueg);
+    double mem_size = unionize_nuclides();
     ueg_index.resize(M + 1); 
+
+    vector<double> bin_energy(M + 1);
+    for (int k = 0; k <= M; ++k)
+      bin_energy[k] = E_min * std::exp(log_mesh[k]);
+
     int j = 0;
     for (int k = 0; k <= M; ++k) {
-      while (std::log(ueg[j + 1] / E_min) <= log_mesh[k]) {
+      while (ueg[j + 1] <= bin_energy[k]) {
         if (j + 2 == ueg.size()) break;
         ++j;
       }
@@ -58,47 +57,29 @@ namespace openmc {
     data::use_ueg = true;
   }
   
-  double unionize_nuclides(vector<double>& ueg) 
+  double unionize_nuclides() 
   {
     int neutron = ParticleType::neutron().transport_index();
     double E_min = data::energy_min[neutron];
     double E_max = data::energy_max[neutron];
 
+    auto& ueg = data::ue_grid->energy;
     //imp_e_grid will contain energy points that should not be thinned (URR and Sab energies)
     vector<double> imp_e_grid {E_min, E_max};
-    vector<double> buffer;
 
-    int num_temps = 0;
+    int total_energies = 0.0;
+    for (const auto& nuc : data::nuclides)
+      for (int t = 0; t < nuc->kTs_.size(); t++)
+        total_energies += nuc->grid_[t].energy.size();
+
+    ueg.reserve(total_energies);
+
     //Get energies from all nuclides
     for (const auto& nuc : data::nuclides) {
-      num_temps += nuc->kTs_.size()*nuc->reactions_.size();
       for (int t = 0; t < nuc->kTs_.size(); t++) {
-        const vector<double>& energies = nuc->grid_[t].energy; 
-        buffer.clear();
-        buffer.reserve(ueg.size() + energies.size());
+        const vector<double>& energies = nuc->grid_[t].energy;
+        ueg.insert(ueg.end(), energies.begin(), energies.end());
 
-        size_t i = 0;
-        size_t j = 0;
-
-        while (i < ueg.size() && j < energies.size()) {
-          if (ueg[i] < energies[j]) {
-            buffer.push_back(ueg[i++]);
-          } else if (energies[j] < ueg[i]) {
-            buffer.push_back(energies[j++]);
-          } else {
-            buffer.push_back(ueg[i]);
-            ++i;
-            ++j;
-          }
-        }
-
-        while (i < ueg.size())
-          buffer.push_back(ueg[i++]);
-
-        while (j < energies.size())
-          buffer.push_back(energies[j++]);
-
-        ueg.swap(buffer);
         /*
         //Add URR energies to important energy grid
         if (nuclide->urr_present_) {
@@ -113,19 +94,20 @@ namespace openmc {
         }
       }
     }
+    
+    std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
+    ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
     //Sort ueg energy and thin redundant points according to the thinning cutoff parameter
     double tau = settings::ue_grid_cutoff;
     int grid_size = 0;
-    for (int i = 0; i < ueg.size() - 1; i++) {
-      double current_e = ueg[i];
-      double next_e = ueg[i + 1];
-      if ((next_e - current_e) < tau * current_e) {
-        ueg[grid_size] = 0.5*(current_e + next_e);
-      } else {
-        ueg[grid_size] = current_e;
-        grid_size++;
-      }
-    }
+    int i = 0;
+    while (i < ueg.size()) {
+      int end = i;
+      while (end + 1 < ueg.size() && (ueg[end + 1] - ueg[end]) < tau * ueg[end])
+        ++end;
+      ueg[grid_size++] = (end > i) ? 0.5 * (ueg[i] + ueg[end]) : ueg[i];
+      i = end + 1;
+    } 
     ueg.resize(grid_size + 1);
     ueg.shrink_to_fit();
 
@@ -134,41 +116,61 @@ namespace openmc {
     std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
     
     auto min_it = ueg.begin();
-    auto max_it = --ueg.end();
+    auto max_it = ueg.end() - 1;
 
     while (*min_it < E_min) min_it++;
     while (*max_it > E_max) max_it--;
 
-    ueg.erase(ueg.begin(), min_it + 1);
-    ueg.erase(max_it - 1, ueg.end());
+    ueg.erase(max_it + 1, ueg.end());
+    ueg.erase(ueg.begin(), min_it);
+
     ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
-    std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
+    //std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
     
-    const auto e = tensor::Tensor<double>(ueg.data(), ueg.size());
+    const tensor::View<const double> e(ueg.data(), {ueg.size()}, {1});
 
-    //Iterate through all nuclides to update XS
-    for (auto & nuc : data::nuclides) {
-      auto & grid = nuc->grid_;
-      //Interpolate XS for each nuclide temperature and reaction
-      for (auto& rxn : nuc->reactions_) {
-        for (int t = 0; t < nuc->kTs_.size(); t++) {
-          auto & xs = rxn->xs_[t];
-          auto n_energies = grid[t].energy.size();
-          auto grid_data = tensor::Tensor<double>(grid[t].energy.data(), n_energies);
-          auto ep = grid_data.slice(tensor::range(xs.threshold, n_energies));
-          
-          auto xsp = tensor::Tensor<double>(xs.value.data(), xs.threshold + xs.value.size());
-          if (xs.threshold != 0)
-            xs.threshold = lower_bound_index(ueg.begin(), ueg.end(), ep[0]);
+    struct XsUpdateMap {
+      int nuc_idx;
+      int rxn_idx;
+      int t;
+    };
 
-          auto e_grid = e.slice(tensor::range(xs.threshold, e.size()));
+    vector<XsUpdateMap> tasks;
+    int num_temps = 0;
+    for (int n = 0; n < data::nuclides.size(); ++n) {
+      auto& nuc = data::nuclides[n];
+      num_temps += (nuc->reactions_.size() * nuc->kTs_.size());
+      for (int rx = 0; rx < nuc->reactions_.size(); ++rx)
+        for (int t = 0; t < nuc->kTs_.size(); ++t)
+          tasks.push_back({n, rx, t});
+    }
 
-          auto rxn_xs = tensor::interp(e_grid, ep, xsp, 0.0, xs.value.back());
-          xs.value = vector<double>(rxn_xs.cbegin(), rxn_xs.cend());
-        }
-      }
+    #pragma omp parallel for
+    for (int i_task = 0; i_task < tasks.size(); ++i_task) {
+      const auto& task = tasks[i_task];
+      auto& nuc = data::nuclides[task.nuc_idx];
+      auto& rxn = nuc->reactions_[task.rxn_idx];
+      auto& grid = nuc->grid_;
+      const int t = task.t;
 
-      grid.erase(grid.begin(), grid.end());
+      auto& xs = rxn->xs_[t];
+      const size_t n_energies = grid[t].energy.size();
+
+      const tensor::View<const double> grid_data(grid[t].energy.data(), {n_energies}, {1});
+      auto ep = grid_data.slice(tensor::range(xs.threshold, n_energies));
+
+      const tensor::View<const double> xsp(xs.value.data(), {xs.value.size()}, {1});
+
+      if (xs.threshold != 0)
+        xs.threshold = lower_bound_index(ueg.begin(), ueg.end(), ep[0]);
+
+      auto e_grid = e.slice(tensor::range(xs.threshold, e.size()));
+      auto rxn_xs = tensor::interp(e_grid, ep, xsp, 0.0, xs.value.back());
+      xs.value = vector<double>(rxn_xs.cbegin(), rxn_xs.cend());
+    }
+
+    for (auto& nuc : data::nuclides) {
+      nuc->grid_.clear();
       nuc->create_ue_derived(nuc->prompt_photons_.get(), nuc->delayed_photons_.get(), ueg);
     }
 

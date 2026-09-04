@@ -121,8 +121,6 @@ constexpr int NUCLIDE_NONE {-1};
 // Temperature treatment method
 enum class TemperatureMethod { NEAREST, INTERPOLATION };
 
-enum class UnionizationMethod { NONE, MATERIAL, GLOBAL };
-
 // Reaction types
 enum ReactionType {
   REACTION_NONE = 0,
