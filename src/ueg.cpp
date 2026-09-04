@@ -117,16 +117,12 @@ namespace openmc {
     
     auto min_it = ueg.begin();
     auto max_it = ueg.end() - 1;
-
     while (*min_it < E_min) min_it++;
     while (*max_it > E_max) max_it--;
-
     ueg.erase(max_it + 1, ueg.end());
     ueg.erase(ueg.begin(), min_it);
 
     ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
-    //std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
-    
     const tensor::View<const double> e(ueg.data(), {ueg.size()}, {1});
 
     struct XsUpdateMap {
@@ -158,7 +154,6 @@ namespace openmc {
 
       const tensor::View<const double> grid_data(grid[t].energy.data(), {n_energies}, {1});
       auto ep = grid_data.slice(tensor::range(xs.threshold, n_energies));
-
       const tensor::View<const double> xsp(xs.value.data(), {xs.value.size()}, {1});
 
       if (xs.threshold != 0)
@@ -174,8 +169,7 @@ namespace openmc {
       nuc->create_ue_derived(nuc->prompt_photons_.get(), nuc->delayed_photons_.get(), ueg);
     }
 
-    write_message("Num points : {} | Num temps : {} | sizeof double : {}", std::to_string(ueg.size()), std::to_string(num_temps), std::to_string(sizeof(double)));
     double mem_size = (double)(ueg.size()*num_temps)*sizeof(double)*BYTES_TO_GIGABYTES;
     return mem_size;
   }
-} // namespace openmc w
+} // namespace openmc
