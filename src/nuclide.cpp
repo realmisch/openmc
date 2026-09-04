@@ -577,10 +577,13 @@ void Nuclide::create_ue_derived(
   for (int t = 0; t < kTs_.size(); ++t) {
     if (fissionable_) {
       int n = ueg.size();
+      const int rxn_stride = xs_[t].shape(1);
+      auto fission_xs = xs_[t].data() + XS_FISSION;
       for (int i = 0; i < n; ++i) {
         double E = ueg[i];
         xs_[t](i, XS_NU_FISSION) =
-          nu(E, EmissionMode::total) * xs_[t](i, XS_FISSION);
+          nu(E, EmissionMode::total) * (*fission_xs);
+        fission_xs += rxn_stride;
       }
     }
   }
@@ -717,8 +720,9 @@ void Nuclide::calculate_elastic_xs(Particle& p) const
   double f = micro.interp_factor;
 
   if (i_temp >= 0) {
-    const auto& xs = reactions_[0]->xs_[i_temp].value;
-    micro.elastic = (1.0 - f) * xs[i_grid] + f * xs[i_grid + 1];
+    const auto& xs_low = reactions_[0]->xs_[i_temp].value.begin() + i_grid;
+    const auto& xs_high = xs_low + 1;
+    micro.elastic = (1.0 - f) * (*xs_low) + f * (*xs_high);
   }
 }
 
@@ -852,7 +856,6 @@ void Nuclide::calculate_xs(
     // performed
 
     const auto& grid = grid_[i_temp];
-    const auto& xs {xs_[i_temp]};
 
     int i_grid;
     if (p.E() < grid.energy.front()) {
@@ -1238,8 +1241,10 @@ void Nuclide::calculate_urr_xs(int i_temp, Particle& p) const
     Reaction* rx = reactions_[urr_inelastic_].get();
     int xs_index = micro.index_grid - rx->xs_[i_temp].threshold;
     if (xs_index >= 0) {
-      inelastic = (1. - f) * rx->xs_[i_temp].value[xs_index] +
-                  f * rx->xs_[i_temp].value[xs_index + 1];
+      const auto& xs_low = rx->xs_[i_temp].value.begin() + xs_index;
+      const auto& xs_high = xs_low + 1;
+      inelastic = (1. - f) * (*xs_low) +
+                  f * (*xs_high);
     }
   }
 

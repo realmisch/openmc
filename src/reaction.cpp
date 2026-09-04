@@ -100,11 +100,12 @@ double Reaction::xs(int64_t i_temp, int64_t i_grid, double interp_factor) const
 {
   // If energy is below threshold, return 0. Otherwise interpolate between
   // nearest grid points
-  const auto& x = xs_[i_temp];
-  return (i_grid < x.threshold)
-           ? 0.0
-           : (1.0 - interp_factor) * x.value[i_grid - x.threshold] +
-               interp_factor * x.value[i_grid - x.threshold + 1];
+  const int threshold = xs_[i_temp].threshold;
+  if (i_grid < threshold)
+    return 0.0;
+  const auto& x_low = xs_[i_temp].value.begin() + i_grid - threshold;
+  const auto& x_high = x_low + 1;
+  return (1.0 - interp_factor) * (*x_low) + interp_factor * (*x_high);
 }
 
 double Reaction::xs(const NuclideMicroXS& micro) const
