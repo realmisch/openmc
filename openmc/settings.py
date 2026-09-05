@@ -337,8 +337,12 @@ class Settings:
     ue_grid : dict
         Defines global unionization parameters for cross section energy grids. 
         Accepted keys are 'method' and 'cutoff'. The value for 'method' should 
-        be True or False. If the unionized energy grid is enabled, 'cutoff' indicates 
-        the relative tolerance for thinning grid points in the unionized energy grids.
+        be 'none', 'energy', or 'index'. For 'energy', all cross sections are 
+        interpolated onto a global unionized energy grid. For 'index', the 
+        grid indices for each energy grid are mapped to a global unionized energy
+        grid with the cross sections unchanged. The 'none' method disables
+        grid unionization. The value for 'cutoff' controls grid thinning when
+        the 'energy' method is selected.
     use_decay_photons : bool
         Produce decay photons from neutron reactions instead of prompt
     verbosity : int
@@ -995,7 +999,8 @@ class Settings:
             cv.check_value('ue_grid key', key,
                            ['method', 'cutoff'])
             if key == 'method':
-                cv.check_type('ue_grid method', value, bool)
+                cv.check_value('ue_grid method', value, 
+                               ['none', 'energy', 'index'])
             elif key == 'cutoff':
                 cv.check_type('ue_grid cutoff', value, Real)
                 cv.check_greater_than('ue_grid cutoff', value, 0.0)

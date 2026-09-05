@@ -79,7 +79,6 @@ bool temperature_multipole {false};
 bool trigger_on {false};
 bool trigger_predict {false};
 bool uniform_source_sampling {false};
-bool ue_grid_method {false};
 bool ufs_on {false};
 bool urr_ptables_on {true};
 bool use_decay_photons {false};
@@ -147,6 +146,7 @@ int64_t trace_particle;
 vector<array<int, 3>> track_identifiers;
 int trigger_batch_interval {1};
 double ue_grid_cutoff {1.0E-10};
+UnionGridMethod ue_grid_method {UnionGridMethod::NONE};
 int verbosity {-1};
 double weight_cutoff {0.25};
 double weight_survive {1.0};
@@ -1112,7 +1112,16 @@ void read_settings_xml(pugi::xml_node root)
   }
 
   if (check_for_node(root, "ue_grid_method")) {
-    ue_grid_method = get_node_value_bool(root, "ue_grid_method");
+    auto temp = get_node_value(root, "ue_grid_method", true, true);
+    if (temp == "none") {
+      ue_grid_method = UnionGridMethod::NONE;
+    } else if (temp == "energy") {
+      ue_grid_method = UnionGridMethod::ENERGY;
+    } else if (temp == "index") {
+      ue_grid_method = UnionGridMethod::INDEX;
+    } else {
+      fatal_error("Unknown unionization method: " + temp);
+    }
     if (!run_CE) {
       fatal_error("Unionized energy grid must be used with "
                   "continuous energy cross sections.");
@@ -1160,7 +1169,7 @@ void read_settings_xml(pugi::xml_node root)
       fatal_error("Multipole data cannot currently be used in conjunction with "
                   "photon transport.");
     }
-    if (temperature_multipole && ue_grid_method == true) {
+    if (temperature_multipole && ue_grid_method != UnionGridMethod::NONE) {
       fatal_error("Multipole data cannot be used with a unionized energy grid");
     }
   }

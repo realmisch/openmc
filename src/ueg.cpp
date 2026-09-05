@@ -2,6 +2,7 @@
 #include<execution>
 #include<set>
 
+#include "openmc/constants.h"
 #include "openmc/energy_grid.h"
 #include "openmc/ueg.h"
 #include "openmc/material.h"
@@ -36,34 +37,6 @@ namespace openmc {
     vector<double>& ueg = data::ue_grid->energy;
     vector<int>& ueg_index = data::ue_grid->grid_index;
 
-    double mem_size = unionize_nuclides();
-    ueg_index.resize(M + 1); 
-
-    vector<double> bin_energy(M + 1);
-    for (int k = 0; k <= M; ++k)
-      bin_energy[k] = E_min * std::exp(log_mesh[k]);
-
-    int j = 0;
-    for (int k = 0; k <= M; ++k) {
-      while (ueg[j + 1] <= bin_energy[k]) {
-        if (j + 2 == ueg.size()) break;
-        ++j;
-      }
-      ueg_index[k] = j;
-    }
-    write_message("Global Unionized Energy Grid: {} grid points - {:.3f} GB of memory", ueg.size(), mem_size);
-    if (mem_size > 10)
-      warning(fmt::format("{} GB required for Unionized Energy Grid cross sections", mem_size));
-    data::use_ueg = true;
-  }
-  
-  double unionize_nuclides() 
-  {
-    int neutron = ParticleType::neutron().transport_index();
-    double E_min = data::energy_min[neutron];
-    double E_max = data::energy_max[neutron];
-
-    auto& ueg = data::ue_grid->energy;
     //imp_e_grid will contain energy points that should not be thinned (URR and Sab energies)
     vector<double> imp_e_grid {E_min, E_max};
 
@@ -97,19 +70,22 @@ namespace openmc {
     
     std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
     ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
-    //Sort ueg energy and thin redundant points according to the thinning cutoff parameter
-    double tau = settings::ue_grid_cutoff;
-    int grid_size = 0;
-    int i = 0;
-    while (i < ueg.size()) {
-      int end = i;
-      while (end + 1 < ueg.size() && (ueg[end + 1] - ueg[end]) < tau * ueg[end])
-        ++end;
-      ueg[grid_size++] = (end > i) ? 0.5 * (ueg[i] + ueg[end]) : ueg[i];
-      i = end + 1;
-    } 
-    ueg.resize(grid_size + 1);
-    ueg.shrink_to_fit();
+
+    if (settings::ue_grid_method == UnionGridMethod::ENERGY) {
+      //Sort ueg energy and thin redundant points according to the thinning cutoff parameter
+      double tau = settings::ue_grid_cutoff;
+      int grid_size = 0;
+      int i = 0;
+      while (i < ueg.size()) {
+        int end = i;
+        while (end + 1 < ueg.size() && (ueg[end + 1] - ueg[end]) < tau * ueg[end])
+          ++end;
+        ueg[grid_size++] = (end > i) ? 0.5 * (ueg[i] + ueg[end]) : ueg[i];
+        i = end + 1;
+      } 
+      ueg.resize(grid_size + 1);
+      ueg.shrink_to_fit();
+    }
 
     //Insert important grid points
     ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
@@ -123,13 +99,42 @@ namespace openmc {
     ueg.erase(ueg.begin(), min_it);
 
     ueg.erase(std::unique(std::execution::par_unseq, ueg.begin(), ueg.end()), ueg.end());
-    const tensor::View<const double> e(ueg.data(), {ueg.size()}, {1});
 
-    struct XsUpdateMap {
-      int nuc_idx;
-      int rxn_idx;
-      int t;
-    };
+    if (settings::ue_grid_method == UnionGridMethod::ENERGY) { 
+      double mem_size = unionize_nuclides();
+      write_message("Global Unionized Energy Grid: {} grid points - {:.3f} GB of memory", ueg.size(), mem_size);
+      if (mem_size > 10)
+        warning(fmt::format("{} GB required for Unionized Energy Grid cross sections", mem_size));   
+      for (auto& nuc : data::nuclides) {
+        nuc->create_ue_derived(nuc->prompt_photons_.get(), nuc->delayed_photons_.get(), ueg);
+      }
+    } else {
+      unionize_nuclide_idx(); 
+      write_message("Global Unionized Index Grid: {} grid points", ueg.size());
+    }
+   
+    ueg_index.resize(M + 1); 
+
+    vector<double> bin_energy(M + 1);
+    for (int k = 0; k <= M; ++k)
+      bin_energy[k] = E_min * std::exp(log_mesh[k]);
+
+    int j = 0;
+    for (int k = 0; k <= M; ++k) {
+      while (ueg[j + 1] <= bin_energy[k]) {
+        if (j + 2 == ueg.size()) break;
+        ++j;
+      }
+      ueg_index[k] = j;
+    }
+
+    data::use_ueg = true;
+  }
+  
+  double unionize_nuclides() 
+  {
+    auto& ueg = data::ue_grid->energy;
+    const tensor::View<const double> e(ueg.data(), {ueg.size()}, {1});
 
     vector<XsUpdateMap> tasks;
     int num_temps = 0;
@@ -164,12 +169,38 @@ namespace openmc {
       xs.value = vector<double>(rxn_xs.cbegin(), rxn_xs.cend());
     }
 
-    for (auto& nuc : data::nuclides) {
-      nuc->grid_.clear();
-      nuc->create_ue_derived(nuc->prompt_photons_.get(), nuc->delayed_photons_.get(), ueg);
-    }
-
     double mem_size = (double)(ueg.size()*num_temps)*sizeof(double)*BYTES_TO_GIGABYTES;
     return mem_size;
   }
+
+  void unionize_nuclide_idx() {
+    const auto& ueg = data::ue_grid->energy;
+
+    vector<XsUpdateMap> tasks;
+    for (int n = 0; n < data::nuclides.size(); ++n) {
+      auto& nuc = data::nuclides[n];
+      for (int t = 0; t < nuc->kTs_.size(); ++t)
+        tasks.push_back({n, 0, t});
+    }
+
+    #pragma omp parallel
+    for (int i_task = 0; i_task < tasks.size(); ++i_task) {
+      const auto& task = tasks[i_task];
+      auto& nuc = data::nuclides[task.nuc_idx];
+      const auto& grid_energy = nuc->grid_[task.t].energy;
+      auto& grid_index = nuc->grid_[task.t].grid_index;
+
+      grid_index.resize(ueg.size());
+
+      int j = 0;
+      for (int k = 0; k < ueg.size(); k++) {
+        while (grid_energy[j + 1] <= ueg[k]) {
+          j++;
+          if (j + 1 == grid_energy.size()) break;
+        }
+        grid_index[k] = j;
+      }
+    }
+  }
+
 } // namespace openmc

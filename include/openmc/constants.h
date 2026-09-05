@@ -121,6 +121,9 @@ constexpr int NUCLIDE_NONE {-1};
 // Temperature treatment method
 enum class TemperatureMethod { NEAREST, INTERPOLATION };
 
+// Unionized Energy Grid treatment method
+enum class UnionGridMethod { NONE, ENERGY, INDEX };
+
 // Reaction types
 enum ReactionType {
   REACTION_NONE = 0,

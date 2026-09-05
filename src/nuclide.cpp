@@ -349,7 +349,7 @@ Nuclide::Nuclide(hid_t group, const vector<double>& temperature)
     close_group(fer_group);
   }
 
-  if (!settings::ue_grid_method)
+  if (settings::ue_grid_method != UnionGridMethod::ENERGY)
     this->create_derived(prompt_photons_.get(), delayed_photons_.get());
 }
 
@@ -1025,9 +1025,17 @@ void Nuclide::calculate_ue_xs(
       ++i_temp;
     break;
   }
-
-  int i_grid = p.ue_i_grid();
-  double f = p.ue_f();
+  int i_grid;
+  double f;
+  if (settings::ue_grid_method == UnionGridMethod::ENERGY) {
+    i_grid = p.ue_i_grid();
+    f = p.ue_f();
+  } else {
+    const auto& grid = grid_[i_temp];
+    i_grid = grid.grid_index[p.ue_i_grid()];
+    f = (p.E() - grid.energy[i_grid]) /
+      (grid.energy[i_grid + 1] - grid.energy[i_grid]);
+  }
 
   micro.index_temp = i_temp;
   micro.index_grid = i_grid;
@@ -1037,9 +1045,10 @@ void Nuclide::calculate_ue_xs(
 
   const double *xs_low = xs_[i_temp].data() + i_grid * rxn_stride;
   const double *xs_high = xs_low + rxn_stride;
-
   micro.total = 
     (1.0 - f) * xs_low[XS_TOTAL] + f * xs_high[XS_TOTAL];
+  if (micro.total < 0)
+    write_message("p.E() = {}, grid_energy_low = {}, grid_energy_high = {}", p.E(), grid_[i_temp].energy[i_grid], grid_[i_temp].energy[i_grid + 1]);
   micro.absorption = 
     (1.0 - f) * xs_low[XS_ABSORPTION] + f * xs_high[XS_ABSORPTION];
   if (fissionable_) {

@@ -94,7 +94,6 @@ extern bool temperature_multipole;   //!< use multipole data?
 extern "C" bool trigger_on;          //!< tally triggers enabled?
 extern bool trigger_predict;         //!< predict batches for triggers?
 extern bool uniform_source_sampling; //!< sample sources uniformly?
-extern bool ue_grid_method;          //!< Use Unionized Energy Grid
 extern bool ufs_on;                  //!< uniform fission site method on?
 extern bool urr_ptables_on;          //!< use unresolved resonance prob. tables?
 extern bool use_decay_photons;       //!< use decay photons for D1S
@@ -197,6 +196,7 @@ extern vector<array<int, 3>>
   track_identifiers;               //!< Particle numbers for writing tracks
 extern int trigger_batch_interval; //!< Batch interval for triggers
 extern double ue_grid_cutoff;     //!< Unionized energy grid grid-thinning cutoff
+extern UnionGridMethod ue_grid_method; //!< Unionied grid method
 extern "C" int verbosity;          //!< How verbose to make output
 extern double weight_cutoff;       //!< Weight cutoff for Russian roulette
 extern double weight_survive;      //!< Survival weight after Russian roulette
