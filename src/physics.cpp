@@ -690,7 +690,6 @@ void scatter(Particle& p, int i_nuclide)
   // For tallying purposes, this routine might be called directly. In that
   // case, we need to sample a reaction via the cutoff variable
   double cutoff = prn(p.current_seed()) * (micro.total - micro.absorption);
-  bool sampled = false;
 
   // Calculate elastic cross section if it wasn't precalculated
   if (micro.elastic == CACHE_INVALID) {
@@ -698,7 +697,7 @@ void scatter(Particle& p, int i_nuclide)
   }
 
   double prob = micro.elastic - micro.thermal;
-  if (prob > cutoff) {
+  if (micro.elastic - micro.thermal > cutoff) {
     // =======================================================================
     // NON-S(A,B) ELASTIC SCATTERING
 
@@ -709,31 +708,25 @@ void scatter(Particle& p, int i_nuclide)
     elastic_scatter(i_nuclide, *nuc->reactions_[0], kT, p);
 
     p.event_mt() = ELASTIC;
-    sampled = true;
-  }
-
-  prob = micro.elastic;
-  if (prob > cutoff && !sampled) {
+  } else if (micro.elastic > cutoff) {
     // =======================================================================
     // S(A,B) SCATTERING
 
     sab_scatter(i_nuclide, micro.index_sab, p);
 
     p.event_mt() = ELASTIC;
-    sampled = true;
-  }
-
-  if (!sampled) {
+  } else {
     // =======================================================================
     // INELASTIC SCATTERING
 
     int n = nuc->index_inelastic_scatter_.size();
     int i = 0;
+    double prob = micro.elastic;
     for (int j = 0; j < n && prob < cutoff; ++j) {
       i = nuc->index_inelastic_scatter_[j];
 
       // add to cumulative probability
-      prob += nuc->reactions_[i]->xs(micro);
+      prob += nuc->reactions_[i]->xs(i_temp, micro.index_grid, micro.interp_factor);
     }
 
     // Perform collision physics for inelastic scattering

@@ -103,8 +103,8 @@ double Reaction::xs(int64_t i_temp, int64_t i_grid, double interp_factor) const
   const int threshold = xs_[i_temp].threshold;
   if (i_grid < threshold)
     return 0.0;
-  const auto& x_low = xs_[i_temp].value.begin() + i_grid - threshold;
-  const auto& x_high = x_low + 1;
+  const double *x_low = xs_[i_temp].value.data() + i_grid - threshold;
+  const double *x_high = x_low + 1;
   return (1.0 - interp_factor) * (*x_low) + interp_factor * (*x_high);
 }
 

@@ -867,7 +867,8 @@ void Material::calculate_neutron_xs(Particle& p) const
   if (ncrystal_mat_ && p.E() < NCRYSTAL_MAX_ENERGY) {
     ncrystal_xs = ncrystal_mat_.xs(p);
   }
-
+  
+  const double *nuclide_densities = atom_density_.data(); 
   // Add contribution from each nuclide in material
   for (int i = 0; i < nuclide_.size(); ++i) {
     // ======================================================================
@@ -917,7 +918,7 @@ void Material::calculate_neutron_xs(Particle& p) const
     // ADD TO MACROSCOPIC CROSS SECTION
 
     // Copy atom density of nuclide in material
-    double atom_density = this->atom_density(i, p.density_mult());
+    double atom_density = nuclide_densities[i] * p.density_mult();
 
     // Add contributions to cross sections
     p.macro_xs().total += atom_density * micro.total;
