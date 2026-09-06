@@ -853,7 +853,7 @@ void Material::calculate_neutron_xs(Particle& p) const
       if (settings::ue_grid_method == UnionGridMethod::ENERGY)
         p.ue_f() = (p.E() - ue_grid.energy[new_i_grid]) /
           (ue_grid.energy[new_i_grid + 1] - ue_grid.energy[new_i_grid]);
-      p.ue_i_grid() = new_i_grid;
+      p.ue_i_grid() = lower_bound_index(ue_grid.energy.begin(), ue_grid.energy.end(), p.E());
     }
   }
 

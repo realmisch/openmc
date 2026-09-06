@@ -116,20 +116,15 @@ namespace openmc {
     }
    
     ueg_index.resize(M + 1); 
-
-    vector<double> bin_energy(M + 1);
-    for (int k = 0; k <= M; ++k)
-      bin_energy[k] = E_min * std::exp(log_mesh[k]);
-
     int j = 0;
     for (int k = 0; k <= M; ++k) {
-      while (ueg[j + 1] <= bin_energy[k]) {
+      while (std::log(ueg[j + 1] / E_min) <= log_mesh(k)) {
         if (j + 2 == ueg.size()) break;
         ++j;
       }
       ueg_index[k] = j;
     }
-
+      
     data::use_ueg = true;
   }
   
@@ -184,6 +179,8 @@ namespace openmc {
       for (int t = 0; t < nuc->kTs_.size(); ++t)
         tasks.push_back({n, 0, t});
     }
+    
+    const int ueg_size = ueg.size();
 
     #pragma omp parallel
     for (int i_task = 0; i_task < tasks.size(); ++i_task) {
@@ -193,12 +190,15 @@ namespace openmc {
       auto& grid_index = nuc->grid_[task.t].grid_index;
 
 
-      const int ueg_size = ueg.size();
       grid_index.resize(ueg_size);
+      int k = 0;
+      for (; k < ueg_size && ueg[k] < grid_energy[0]; ++k) {
+        grid_index[k] = -1; 
+      }
 
       int j = 0;
-      for (int k = 0; k < ueg_size; k++) {
-        while (j + 1 < ueg_size && grid_energy[j + 1] <= ueg[k]) {
+      for (; k < ueg_size; k++) {
+        while (j + 2 < ueg_size && grid_energy[j + 1] <= ueg[k]) {
           j++;
         }
         grid_index[k] = j;
