@@ -53,17 +53,19 @@ namespace openmc {
         const vector<double>& energies = nuc->grid_[t].energy;
         ueg.insert(ueg.end(), energies.begin(), energies.end());
 
-        /*
-        //Add URR energies to important energy grid
-        if (nuclide->urr_present_) {
-        const auto& urr_energies = nuclide->urr_data_[t].energy_;
-        imp_e_grid.insert(imp_e_grid.end(), urr_energies.begin(), urr_energies.end());
-        }
-        */
-        //Add threshold energies to important energy grid
-        for (auto& rxn : nuc->reactions_) {
-          imp_e_grid.insert(imp_e_grid.end(), energies[rxn->xs_[t].threshold]);
-          imp_e_grid.insert(imp_e_grid.end(), energies.back());
+        if (settings::ue_grid_method == UnionGridMethod::ENERGY) {
+          /*
+          //Add URR energies to important energy grid
+          if (nuclide->urr_present_) {
+          const auto& urr_energies = nuclide->urr_data_[t].energy_;
+          imp_e_grid.insert(imp_e_grid.end(), urr_energies.begin(), urr_energies.end());
+          }
+          */
+          //Add threshold energies to important energy grid
+          for (auto& rxn : nuc->reactions_) {
+            imp_e_grid.insert(imp_e_grid.end(), energies[rxn->xs_[t].threshold]);
+            imp_e_grid.insert(imp_e_grid.end(), energies.back());
+          }
         }
       }
     }
@@ -190,13 +192,14 @@ namespace openmc {
       const auto& grid_energy = nuc->grid_[task.t].energy;
       auto& grid_index = nuc->grid_[task.t].grid_index;
 
-      grid_index.resize(ueg.size());
+
+      const int ueg_size = ueg.size();
+      grid_index.resize(ueg_size);
 
       int j = 0;
-      for (int k = 0; k < ueg.size(); k++) {
-        while (grid_energy[j + 1] <= ueg[k]) {
+      for (int k = 0; k < ueg_size; k++) {
+        while (j + 1 < ueg_size && grid_energy[j + 1] <= ueg[k]) {
           j++;
-          if (j + 1 == grid_energy.size()) break;
         }
         grid_index[k] = j;
       }
