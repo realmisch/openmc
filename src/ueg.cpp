@@ -60,12 +60,12 @@ namespace openmc {
           const auto& urr_energies = nuclide->urr_data_[t].energy_;
           imp_e_grid.insert(imp_e_grid.end(), urr_energies.begin(), urr_energies.end());
           }
-          */
           //Add threshold energies to important energy grid
           for (auto& rxn : nuc->reactions_) {
             imp_e_grid.insert(imp_e_grid.end(), energies[rxn->xs_[t].threshold]);
             imp_e_grid.insert(imp_e_grid.end(), energies.back());
           }
+          */
         }
       }
     }
@@ -90,7 +90,7 @@ namespace openmc {
     }
 
     //Insert important grid points
-    ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
+    //ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
     std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
     
     auto min_it = ueg.begin();
@@ -191,17 +191,8 @@ namespace openmc {
 
 
       grid_index.resize(ueg_size);
-      int k = 0;
-      for (; k < ueg_size && ueg[k] < grid_energy[0]; ++k) {
-        grid_index[k] = -1; 
-      }
-
-      int j = 0;
-      for (; k < ueg_size; k++) {
-        while (j + 2 < ueg_size && grid_energy[j + 1] <= ueg[k]) {
-          j++;
-        }
-        grid_index[k] = j;
+      for (int j = 0; j < ueg_size; ++j) {
+        grid_index[j] = lower_bound_index(grid_energy.begin(), grid_energy.end(), ueg[j] + 1.0E-6);
       }
     }
   }

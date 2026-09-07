@@ -756,13 +756,14 @@ void initialize_data()
   simulation::log_spacing =
     std::log(data::energy_max[neutron] / data::energy_min[neutron]) /
     settings::n_log_bins;
-  for (auto& nuc : data::nuclides) {
-    nuc->init_grid();
-  }
 
   if (settings::ue_grid_method != UnionGridMethod::NONE) {
     data::ue_grid = std::make_shared<EnergyGrid>();
     create_union_energy_grid();
+  } else {
+    for (auto& nuc : data::nuclides) {
+      nuc->init_grid();
+    }
   } 
 }
 

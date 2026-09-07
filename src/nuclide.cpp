@@ -1047,11 +1047,6 @@ void Nuclide::calculate_ue_xs(
   const double *xs_high = xs_low + rxn_stride;
   micro.total = 
     (1.0 - f) * xs_low[XS_TOTAL] + f * xs_high[XS_TOTAL];
-  if (micro.total < 0) {
-    int idx = lower_bound_index(grid_[i_temp].energy.begin(), grid_[i_temp].energy.end(), p.E());
-    write_message("p.E() = {}, ueg_low = {}, actual_low = {}", 
-                  p.E(), i_grid, idx);
-  }
   micro.absorption = 
     (1.0 - f) * xs_low[XS_ABSORPTION] + f * xs_high[XS_ABSORPTION];
   if (fissionable_) {
