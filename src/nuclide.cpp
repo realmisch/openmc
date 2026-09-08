@@ -38,6 +38,7 @@ double temperature_min {INFTY};
 double temperature_max {0.0};
 std::unordered_map<std::string, int> nuclide_map;
 vector<unique_ptr<Nuclide>> nuclides;
+extern std::shared_ptr<EnergyGrid> ue_grid;
 } // namespace data
 
 //==============================================================================

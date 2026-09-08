@@ -60,12 +60,12 @@ namespace openmc {
           const auto& urr_energies = nuclide->urr_data_[t].energy_;
           imp_e_grid.insert(imp_e_grid.end(), urr_energies.begin(), urr_energies.end());
           }
+          */
           //Add threshold energies to important energy grid
           for (auto& rxn : nuc->reactions_) {
             imp_e_grid.insert(imp_e_grid.end(), energies[rxn->xs_[t].threshold]);
             imp_e_grid.insert(imp_e_grid.end(), energies.back());
           }
-          */
         }
       }
     }
@@ -182,17 +182,25 @@ namespace openmc {
     
     const int ueg_size = ueg.size();
 
-    #pragma omp parallel
+    #pragma omp parallel for
     for (int i_task = 0; i_task < tasks.size(); ++i_task) {
       const auto& task = tasks[i_task];
       auto& nuc = data::nuclides[task.nuc_idx];
-      const auto& grid_energy = nuc->grid_[task.t].energy;
-      auto& grid_index = nuc->grid_[task.t].grid_index;
+      auto& grid = nuc->grid_[task.t];
+      const auto& grid_energy = grid.energy;
+      auto& grid_index = grid.grid_index;
 
 
       grid_index.resize(ueg_size);
-      for (int j = 0; j < ueg_size; ++j) {
-        grid_index[j] = lower_bound_index(grid_energy.begin(), grid_energy.end(), ueg[j] + 1.0E-6);
+      int k = 0;
+      for (; k < ueg_size && ueg[k] < grid_energy[0]; ++k)
+        grid_index[k] = -1;
+
+      int j = 0;
+      for (; k < ueg_size; ++k) {
+        while (j + 2 < ueg_size && grid_energy[j + 1] <= ueg[k])
+          ++j;
+        grid_index[k] = j;
       }
     }
   }
