@@ -150,6 +150,7 @@ void Particle::from_source(const SourceSite* src)
     g_last() = static_cast<int>(src->E);
     E() = data::mg.energy_bin_avg_[g()];
   }
+  ue_i_grid() = -1;
   E_last() = E();
   time() = src->time;
   time_last() = src->time;

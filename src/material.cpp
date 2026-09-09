@@ -886,26 +886,24 @@ void Material::calculate_neutron_xs(Particle& p) const
 
     // Update microscopic cross section for this nuclide
     if (data::use_ueg) {
-      if (true) {
-        const auto &ue_grid = *data::ue_grid;
+      if (p.ue_i_grid() < 0) {
+        const auto &ueg_energy = data::ue_grid->energy;
 
-        if (p.E() < ue_grid.energy.front()) {
+        if (p.E() < ueg_energy.front()) {
           p.ue_i_grid() = 0;
           p.ue_f() = 0;
-        } else if (p.E() > ue_grid.energy.back()) {
-          p.ue_i_grid() = ue_grid.energy.size() - 2;
+        } else if (p.E() > ueg_energy.back()) {
+          p.ue_i_grid() = ueg_energy.size() - 2;
           p.ue_f() = 1;
         } else {
-          int i_low = ue_grid.grid_index[i_grid];
-          int i_high = ue_grid.grid_index[i_grid + 1] + 1;
+          auto i_low = data::ue_grid->grid_index.data() + i_grid;
+          auto i_high = i_low + 1;
 
-          int new_i_grid = i_low + lower_bound_index(
-            &ue_grid.energy[i_low], &ue_grid.energy[i_high], p.E());
-          if (ue_grid.energy[new_i_grid] == ue_grid.energy[new_i_grid + 1])
-            ++new_i_grid;
-          if (settings::ue_grid_method == UnionGridMethod::ENERGY)
-            p.ue_f() = (p.E() - ue_grid.energy[new_i_grid]) /
-              (ue_grid.energy[new_i_grid + 1] - ue_grid.energy[new_i_grid]);
+          int new_i_grid = *i_low + lower_bound_index(
+            &ueg_energy[*i_low], &ueg_energy[*i_high + 1], p.E());
+          auto grid_ptr = ueg_energy.data() + new_i_grid;
+          p.ue_f() = (p.E() - *grid_ptr) /
+            (*(grid_ptr + 1) - *grid_ptr);
           p.ue_i_grid() = new_i_grid;
         }
       }

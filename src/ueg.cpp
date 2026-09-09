@@ -111,14 +111,17 @@ namespace openmc {
         nuc->create_ue_derived(nuc->prompt_photons_.get(), nuc->delayed_photons_.get(), ueg);
       }
     } else {
-      unionize_nuclide_idx(); 
-      write_message("Global Unionized Index Grid: {} grid points", ueg.size());
+      double mem_size = unionize_nuclide_idx(); 
+      write_message("Global Unionized Index Grid: {} grid points - {:.3f} GB of memory", ueg.size(), mem_size);
     }
    
-    ueg_index.resize(M + 1); 
+    ueg_index.resize(M + 1);
+    for (int k = 0; k <= M; ++k)
+      log_mesh[k] = E_min * std::exp(log_mesh[k]);
+
     int j = 0;
     for (int k = 0; k <= M; ++k) {
-      while (std::log(ueg[j + 1] / E_min) <= log_mesh(k)) {
+      while (ueg[j + 1] <= log_mesh[k]) {
         if (j + 2 == ueg.size()) break;
         ++j;
       }
@@ -170,12 +173,14 @@ namespace openmc {
     return mem_size;
   }
 
-  void unionize_nuclide_idx() {
+  double unionize_nuclide_idx() {
     const auto& ueg = data::ue_grid->energy;
 
     vector<XsUpdateMap> tasks;
+    int num_temps = 0;
     for (int n = 0; n < data::nuclides.size(); ++n) {
       auto& nuc = data::nuclides[n];
+      num_temps += nuc->kTs_.size();
       for (int t = 0; t < nuc->kTs_.size(); ++t)
         tasks.push_back({n, 0, t});
     }
@@ -203,6 +208,9 @@ namespace openmc {
         grid_index[k] = j;
       }
     }
+    
+    double mem_size = (double)(ueg.size()*num_temps)*sizeof(double)*BYTES_TO_GIGABYTES; 
+    return mem_size;
   }
 
 } // namespace openmc
