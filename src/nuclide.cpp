@@ -870,7 +870,7 @@ void Nuclide::calculate_xs(
       int i_high = grid.grid_index[i_log_union + 1] + 1;
 
       // Perform binary search over reduced range
-      i_grid = i_low + lower_bound_index(
+      i_grid = i_low + lower_bound_exp(
                          &grid.energy[i_low], &grid.energy[i_high], p.E());
     }
 
