@@ -40,7 +40,7 @@ namespace openmc {
     //imp_e_grid will contain energy points that should not be thinned (URR and Sab energies)
     vector<double> imp_e_grid {E_min, E_max};
 
-    int total_energies = 0.0;
+    int total_energies = 0;
     for (const auto& nuc : data::nuclides)
       for (int t = 0; t < nuc->kTs_.size(); t++)
         total_energies += nuc->grid_[t].energy.size();
@@ -83,12 +83,12 @@ namespace openmc {
         ueg[grid_size++] = (end > i) ? 0.5 * (ueg[i] + ueg[end]) : ueg[i];
         i = end + 1;
       } 
-      ueg.resize(grid_size + 1);
+      ueg.resize(grid_size);
       ueg.shrink_to_fit();
     }
 
     //Insert important grid points
-    //ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
+    ueg.insert(ueg.end(), imp_e_grid.begin(), imp_e_grid.end());
     std::sort(std::execution::par_unseq, ueg.begin(), ueg.end());
     
     auto min_it = ueg.begin();
@@ -104,7 +104,8 @@ namespace openmc {
       double mem_size = unionize_nuclides();
       write_message("Global Unionized Energy Grid: {} grid points - {:.3f} GB of memory", ueg.size(), mem_size);
       if (mem_size > 10)
-        warning(fmt::format("{} GB required for Unionized Energy Grid cross sections", mem_size));   
+        warning(fmt::format("{} GB required for Unionized Energy Grid cross sections", mem_size));
+      #pragma omp parallel for
       for (auto& nuc : data::nuclides) {
         nuc->create_ue_derived(nuc->prompt_photons_.get(), nuc->delayed_photons_.get(), ueg);
       }
@@ -138,7 +139,9 @@ namespace openmc {
     int num_temps = 0;
     for (int n = 0; n < data::nuclides.size(); ++n) {
       auto& nuc = data::nuclides[n];
-      num_temps += (nuc->reactions_.size() * nuc->kTs_.size());
+      int new_temps = (nuc->reactions_.size() * nuc->kTs_.size());
+      num_temps += new_temps;
+      tasks.reserve(tasks.size() + new_temps);
       for (int rx = 0; rx < nuc->reactions_.size(); ++rx)
         for (int t = 0; t < nuc->kTs_.size(); ++t)
           tasks.push_back({n, rx, t});
@@ -159,12 +162,16 @@ namespace openmc {
       auto ep = grid_data.slice(tensor::range(xs.threshold, n_energies));
       const tensor::View<const double> xsp(xs.value.data(), {xs.value.size()}, {1});
 
-      if (xs.threshold != 0)
-        xs.threshold = lower_bound_index(ueg.begin(), ueg.end(), ep[0]);
+      if (xs.threshold != 0) {
+        int idx = lower_bound_index(ueg.begin(), ueg.end(), ep[0]);
+        if (idx + 1 < ueg.size() && ueg[idx + 1] == ep[0])
+          ++idx;
+        xs.threshold = idx;
+      } 
 
       auto e_grid = e.slice(tensor::range(xs.threshold, e.size()));
       auto rxn_xs = tensor::interp(e_grid, ep, xsp, 0.0, xs.value.back());
-      xs.value = vector<double>(rxn_xs.cbegin(), rxn_xs.cend());
+      xs.value = vector<double>(rxn_xs.begin(), rxn_xs.end());
     }
 
     double mem_size = (double)(ueg.size()*num_temps)*sizeof(double)*BYTES_TO_GIGABYTES;
@@ -179,6 +186,7 @@ namespace openmc {
     for (int n = 0; n < data::nuclides.size(); ++n) {
       auto& nuc = data::nuclides[n];
       num_temps += nuc->kTs_.size();
+      tasks.reserve(tasks.size() + nuc->kTs_.size());
       for (int t = 0; t < nuc->kTs_.size(); ++t)
         tasks.push_back({n, 0, t});
     }
@@ -201,7 +209,7 @@ namespace openmc {
 
       int j = 0;
       for (; k < ueg_size; ++k) {
-        while (j + 2 < ueg_size && grid_energy[j + 1] <= ueg[k])
+        while (j + 2 < grid_energy.size() && grid_energy[j + 1] <= ueg[k])
           ++j;
         grid_index[k] = j;
       }

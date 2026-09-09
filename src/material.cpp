@@ -829,11 +829,14 @@ void Material::calculate_xs(Particle& p) const
 
 void Material::calculate_neutron_xs(Particle& p) const
 {
-  // Find energy index on energy grid
-  int neutron = ParticleType::neutron().transport_index();
-  int i_grid =
-    std::log(p.E() / data::energy_min[neutron]) / simulation::log_spacing;
-
+  int neutron;
+  int i_grid;
+  if (!data::use_ueg || p.ue_i_grid() < 0) {
+    // Find energy index on energy grid
+    neutron = ParticleType::neutron().transport_index();
+    i_grid =
+      std::log(p.E() / data::energy_min[neutron]) / simulation::log_spacing;
+  }
   // Determine if this material has S(a,b) tables
   bool check_sab = (thermal_tables_.size() > 0);
 
@@ -887,9 +890,10 @@ void Material::calculate_neutron_xs(Particle& p) const
     // Update microscopic cross section for this nuclide
     if (data::use_ueg) {
       if (p.ue_i_grid() < 0) {
-        const auto &ueg_energy = data::ue_grid->energy.data();
+        const auto& ueg = *data::ue_grid;
+        const auto &ueg_energy = ueg.energy.data();
 
-        auto i_low = data::ue_grid->grid_index.data() + i_grid;
+        auto i_low = ueg.grid_index.data() + i_grid;
         auto i_high = i_low + 1;
 
         int new_i_grid = *i_low + lower_bound_exp(

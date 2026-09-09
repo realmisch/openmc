@@ -12,7 +12,7 @@ namespace openmc {
   };
   namespace data {
       extern bool use_ueg;
-      extern std::shared_ptr<EnergyGrid> union_e_grid;
+      extern std::shared_ptr<EnergyGrid> ue_grid;
     } //namespace data
 } //namespace openmc
 
