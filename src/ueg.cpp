@@ -54,13 +54,11 @@ namespace openmc {
         ueg.insert(ueg.end(), energies.begin(), energies.end());
 
         if (settings::ue_grid_method == UnionGridMethod::ENERGY) {
-          /*
           //Add URR energies to important energy grid
           if (nuclide->urr_present_) {
-          const auto& urr_energies = nuclide->urr_data_[t].energy_;
-          imp_e_grid.insert(imp_e_grid.end(), urr_energies.begin(), urr_energies.end());
+            const auto& urr_energies = nuclide->urr_data_[t].energy_;
+            imp_e_grid.insert(imp_e_grid.end(), urr_energies.begin(), urr_energies.end());
           }
-          */
           //Add threshold energies to important energy grid
           for (auto& rxn : nuc->reactions_) {
             imp_e_grid.insert(imp_e_grid.end(), energies[rxn->xs_[t].threshold]);
