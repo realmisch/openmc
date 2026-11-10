@@ -364,7 +364,7 @@ void Nuclide::create_derived(
 {
   for (const auto& grid : grid_) {
     // Allocate and initialize cross section
-    xs_.push_back(tensor::zeros<double>({grid.energy.size(), 5}));
+    xs_.push_back(tensor::zeros<float>({grid.energy.size(), 5}));
   }
 
   reaction_index_.fill(C_NONE);
@@ -377,7 +377,7 @@ void Nuclide::create_derived(
     for (int t = 0; t < kTs_.size(); ++t) {
       int j = rx->xs_[t].threshold;
       int n = rx->xs_[t].value.size();
-      auto xs = tensor::Tensor<double>(
+      auto xs = tensor::Tensor<float>(
         rx->xs_[t].value.data(), rx->xs_[t].value.size());
       for (const auto& p : rx->products_) {
         if (p.particle_.is_photon()) {
@@ -497,11 +497,11 @@ void Nuclide::create_derived(
 }
 
 void Nuclide::create_ue_derived(
-  const Function1D* prompt_photons, const Function1D* delayed_photons, const vector<double>& ueg) 
+  const Function1D* prompt_photons, const Function1D* delayed_photons, const vector<float>& ueg) 
 {
   for (int t = 0; t < kTs_.size(); t++) {
     // Allocate and initialize cross section
-    xs_.push_back(tensor::zeros<double>({ueg.size(), 5}));
+    xs_.push_back(tensor::zeros<float>({ueg.size(), 5}));
   }
 
   reaction_index_.fill(C_NONE);
@@ -514,7 +514,7 @@ void Nuclide::create_ue_derived(
     for (int t = 0; t < kTs_.size(); ++t) {
       int j = rx->xs_[t].threshold;
       int n = rx->xs_[t].value.size();
-      auto xs = tensor::Tensor<double>(
+      auto xs = tensor::Tensor<float>(
         rx->xs_[t].value.data(), rx->xs_[t].value.size());
       for (const auto& p : rx->products_) {
         if (p.particle_.is_photon()) {
@@ -581,7 +581,7 @@ void Nuclide::create_ue_derived(
       const int rxn_stride = xs_[t].shape(1);
       auto fission_xs = xs_[t].data() + XS_FISSION;
       for (int i = 0; i < n; ++i) {
-        double E = ueg[i];
+        float E = ueg[i];
         xs_[t](i, XS_NU_FISSION) =
           nu(E, EmissionMode::total) * (*fission_xs);
         fission_xs += rxn_stride;
@@ -721,9 +721,8 @@ void Nuclide::calculate_elastic_xs(Particle& p) const
   double f = micro.interp_factor;
 
   if (i_temp >= 0) {
-    const auto& xs_low = reactions_[0]->xs_[i_temp].value.begin() + i_grid;
-    const auto& xs_high = xs_low + 1;
-    micro.elastic = (1.0 - f) * (*xs_low) + f * (*xs_high);
+    const auto& xs = reactions_[0]->xs_[i_temp].value;
+    micro.elastic = (1.0 - f) * xs[i_grid] + f * xs[i_grid + 1];
   }
 }
 
@@ -886,35 +885,32 @@ void Nuclide::calculate_xs(
     micro.index_grid = i_grid;
     micro.interp_factor = f;
     
-    const int rxn_stride = xs_[i_temp].shape(1);
-
-    const double *xs_low = xs_[i_temp].data() + i_grid * rxn_stride;
-    const double *xs_high = xs_low + rxn_stride;
+    const auto& xs {xs_[i_temp]};
 
     // Calculate microscopic nuclide total cross section
     micro.total =
-      (1.0 - f) * xs_low[XS_TOTAL] + f * xs_high[XS_TOTAL];
+      (1.0 - f) * xs(i_grid, XS_TOTAL) + f * xs(i_grid + 1, XS_TOTAL);
 
     // Calculate microscopic nuclide absorption cross section
     micro.absorption =
-      (1.0 - f) * xs_low[XS_ABSORPTION] + f * xs_high[XS_ABSORPTION];
+      (1.0 - f) * xs(i_grid, XS_ABSORPTION) + f * xs(i_grid + 1, XS_ABSORPTION);
 
     if (fissionable_) {
       // Calculate microscopic nuclide total cross section
       micro.fission =
-        (1.0 - f) * xs_low[XS_FISSION] + f * xs_high[XS_FISSION];
+        (1.0 - f) * xs(i_grid, XS_FISSION) + f * xs(i_grid + 1, XS_FISSION);
 
       // Calculate microscopic nuclide nu-fission cross section
-      micro.nu_fission = (1.0 - f) * xs_low[XS_NU_FISSION] +
-                         f * xs_high[XS_NU_FISSION];
+      micro.nu_fission = (1.0 - f) * xs(i_grid, XS_NU_FISSION) +
+                         f * xs(i_grid + 1, XS_NU_FISSION);
     } else {
       micro.fission = 0.0;
       micro.nu_fission = 0.0;
     }
 
     // Calculate microscopic nuclide photon production cross section
-    micro.photon_prod = (1.0 - f) * xs_low[XS_PHOTON_PROD] +
-                        f * xs_high[XS_PHOTON_PROD];
+    micro.photon_prod = (1.0 - f) * xs(i_grid, XS_PHOTON_PROD) +
+                        f * xs(i_grid + 1, XS_PHOTON_PROD);
 
     // Depletion-related reactions
     if (simulation::need_depletion_rx) {
@@ -1042,27 +1038,24 @@ void Nuclide::calculate_ue_xs(
   micro.index_grid = i_grid;
   micro.interp_factor = f;
 
-  const int rxn_stride = xs_[i_temp].shape(1);
-
-  const double *xs_low = xs_[i_temp].data() + i_grid * rxn_stride;
-  const double *xs_high = xs_low + rxn_stride;
+  const auto& xs {xs_[i_temp]};
   micro.total = 
-    (1.0 - f) * xs_low[XS_TOTAL] + f * xs_high[XS_TOTAL];
+    (1.0 - f) * xs(i_grid, XS_TOTAL) + f * xs(i_grid + 1, XS_TOTAL);
   micro.absorption = 
-    (1.0 - f) * xs_low[XS_ABSORPTION] + f * xs_high[XS_ABSORPTION];
+    (1.0 - f) * xs(i_grid, XS_ABSORPTION) + f * xs(i_grid + 1, XS_ABSORPTION);
   if (fissionable_) {
     micro.fission =
-      (1.0 - f) * xs_low[XS_FISSION] + f * xs_high[XS_FISSION];
-    micro.nu_fission = (1.0 - f) * xs_low[XS_NU_FISSION] + 
-                       f * xs_high[XS_NU_FISSION]; 
+      (1.0 - f) * xs(i_grid, XS_FISSION) + f * xs(i_grid + 1, XS_FISSION);
+    micro.nu_fission = (1.0 - f) * xs(i_grid, XS_NU_FISSION) + 
+                       f * xs(i_grid + 1, XS_NU_FISSION); 
   } else {
     micro.fission = 0.0;
     micro.nu_fission = 0.0;
   }
 
   // Calculate microscopic nuclide photon production cross section
-  micro.photon_prod = (1.0 - f) * xs_low[XS_PHOTON_PROD] +
-                        f * xs_high[XS_PHOTON_PROD];
+  micro.photon_prod = (1.0 - f) * xs(i_grid, XS_PHOTON_PROD) +
+                        f * xs(i_grid + 1, XS_PHOTON_PROD);
 
   // Depletion-related reactions
   if (simulation::need_depletion_rx) {
@@ -1078,19 +1071,19 @@ void Nuclide::calculate_ue_xs(
       if (i_rx >= 0) {
         const auto& rx = reactions_[i_rx];
         int threshold = (j == 0) ? 0 : rx->xs_[i_temp].threshold;
-        const double *rx_xs = rx->xs_[i_temp].value.data() + i_grid - threshold;
+        const auto& rx_xs = rx->xs_[i_temp].value;
 
         // Physics says that (n,gamma) is not a threshold reaction, so we
         // don't need to specifically check its threshold index
         if (j == 0) {
           micro.reaction[0] =
-            (1.0 - f) * (*rx_xs) + f * (*(rx_xs + 1));
+            (1.0 - f) * rx_xs[i_grid] + f * rx_xs[i_grid + 1];
           continue;
         }
 
         if (i_grid >= threshold) {
-          micro.reaction[j] = (1.0 - f) * (*rx_xs) +
-                              f * (*(rx_xs + 1));
+          micro.reaction[j] = (1.0 - f) * rx_xs[i_grid] +
+                              f * rx_xs[i_grid + 1];
         } else if (j >= 3) {
           // One can show that the the threshold for (n,(x+1)n) is always
           // higher than the threshold for (n,xn). Thus, if we are below
@@ -1249,10 +1242,8 @@ void Nuclide::calculate_urr_xs(int i_temp, Particle& p) const
     Reaction* rx = reactions_[urr_inelastic_].get();
     int xs_index = micro.index_grid - rx->xs_[i_temp].threshold;
     if (xs_index >= 0) {
-      const auto& xs_low = rx->xs_[i_temp].value.begin() + xs_index;
-      const auto& xs_high = xs_low + 1;
-      inelastic = (1. - f) * (*xs_low) +
-                  f * (*xs_high);
+      inelastic = (1. - f) * rx->xs_[i_temp].value[xs_index] +
+                  f * rx->xs_[i_temp].value[xs_index + 1];
     }
   }
 

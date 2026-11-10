@@ -691,9 +691,9 @@ void initialize_data()
     if (nuc->grid_.size() >= 1) {
       int neutron = ParticleType::neutron().transport_index();
       data::energy_min[neutron] =
-        std::max(data::energy_min[neutron], nuc->grid_[0].energy.front());
+        std::max(data::energy_min[neutron], static_cast<double>(nuc->grid_[0].energy.front()));
       data::energy_max[neutron] =
-        std::min(data::energy_max[neutron], nuc->grid_[0].energy.back());
+        std::min(data::energy_max[neutron], static_cast<double>(nuc->grid_[0].energy.back()));
     }
   }
 

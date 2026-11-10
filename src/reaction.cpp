@@ -100,12 +100,11 @@ double Reaction::xs(int64_t i_temp, int64_t i_grid, double interp_factor) const
 {
   // If energy is below threshold, return 0. Otherwise interpolate between
   // nearest grid points
-  const int threshold = xs_[i_temp].threshold;
-  if (i_grid < threshold)
-    return 0.0;
-  const double *x_low = xs_[i_temp].value.data() + i_grid - threshold;
-  const double *x_high = x_low + 1;
-  return (1.0 - interp_factor) * (*x_low) + interp_factor * (*x_high);
+  const auto& x = xs_[i_temp];
+  return (i_grid < x.threshold)
+           ? 0.0
+           : (1.0 - interp_factor) * x.value[i_grid - x.threshold] + 
+               interp_factor * x.value[i_grid - x.threshold + 1];
 }
 
 double Reaction::xs(const NuclideMicroXS& micro) const
@@ -114,7 +113,7 @@ double Reaction::xs(const NuclideMicroXS& micro) const
 }
 
 double Reaction::collapse_rate(int64_t i_temp, span<const double> energy,
-  span<const double> flux, const vector<double>& grid) const
+  span<const double> flux, const vector<float>& grid) const
 {
   // Find index corresponding to first energy
   const auto& xs = xs_[i_temp].value;

@@ -34,7 +34,7 @@ namespace openmc {
 
     settings::energy_cutoff[0] = std::max(E_min, settings::energy_cutoff[0]);
     
-    vector<double>& ueg = data::ue_grid->energy;
+    vector<float>& ueg = data::ue_grid->energy;
     vector<int>& ueg_index = data::ue_grid->grid_index;
 
     //imp_e_grid will contain energy points that should not be thinned (URR and Sab energies)
@@ -50,7 +50,7 @@ namespace openmc {
     //Get energies from all nuclides
     for (const auto& nuc : data::nuclides) {
       for (int t = 0; t < nuc->kTs_.size(); t++) {
-        const vector<double>& energies = nuc->grid_[t].energy;
+        const vector<float>& energies = nuc->grid_[t].energy;
         ueg.insert(ueg.end(), energies.begin(), energies.end());
 
         if (settings::ue_grid_method == UnionGridMethod::ENERGY) {
@@ -133,7 +133,7 @@ namespace openmc {
   double unionize_nuclides() 
   {
     auto& ueg = data::ue_grid->energy;
-    const tensor::View<const double> e(ueg.data(), {ueg.size()}, {1});
+    const tensor::View<const float> e(ueg.data(), {ueg.size()}, {1});
 
     vector<XsUpdateMap> tasks;
     int num_temps = 0;
@@ -157,10 +157,10 @@ namespace openmc {
 
       auto& xs = rxn->xs_[t];
       const size_t n_energies = grid[t].energy.size();
-
-      const tensor::View<const double> grid_data(grid[t].energy.data(), {n_energies}, {1});
+    
+      const tensor::View<const float> grid_data(grid[t].energy.data(), {n_energies}, {1});
       auto ep = grid_data.slice(tensor::range(xs.threshold, n_energies));
-      const tensor::View<const double> xsp(xs.value.data(), {xs.value.size()}, {1});
+      const tensor::View<const float> xsp(xs.value.data(), {xs.value.size()}, {1});
 
       if (xs.threshold != 0) {
         int idx = lower_bound_index(ueg.begin(), ueg.end(), ep[0]);
@@ -170,8 +170,8 @@ namespace openmc {
       } 
 
       auto e_grid = e.slice(tensor::range(xs.threshold, e.size()));
-      auto rxn_xs = tensor::interp(e_grid, ep, xsp, 0.0, xs.value.back());
-      xs.value = vector<double>(rxn_xs.begin(), rxn_xs.end());
+      auto rxn_xs = tensor::interp(e_grid, ep, xsp, 0.0f, xs.value.back());
+      xs.value = vector<float>(rxn_xs.begin(), rxn_xs.end());
     }
 
     double mem_size = (double)(ueg.size()*num_temps)*sizeof(double)*BYTES_TO_GIGABYTES;
