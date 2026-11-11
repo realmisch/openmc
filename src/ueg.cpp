@@ -170,7 +170,7 @@ namespace openmc {
       } 
 
       auto e_grid = e.slice(tensor::range(xs.threshold, e.size()));
-      auto rxn_xs = tensor::interp(e_grid, ep, xsp, 0.0f, xs.value.back());
+      auto rxn_xs = tensor::interp(e_grid, ep, xsp, 0.0, xs.value.back());
       xs.value = vector<double>(rxn_xs.begin(), rxn_xs.end());
     }
 
