@@ -84,7 +84,7 @@ public:
     span<const double> flux) const;
 
   void create_ue_derived(
-    const Function1D* prompt_photons, const Function1D* delayed_photons, const vector<float>& ueg);
+    const Function1D* prompt_photons, const Function1D* delayed_photons, const vector<double>& ueg);
 
   //============================================================================
   // Data members
@@ -98,7 +98,7 @@ public:
   // Temperature dependent cross section data
   vector<double> kTs_;                //!< temperatures in eV (k*T)
   vector<EnergyGrid> grid_;           //!< Energy grid at each temperature
-  vector<tensor::Tensor<float>> xs_; //!< Cross sections at each temperature
+  vector<tensor::Tensor<double>> xs_; //!< Cross sections at each temperature
 
   // Multipole data
   unique_ptr<WindowedMultipole> multipole_;

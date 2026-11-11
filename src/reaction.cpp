@@ -113,7 +113,7 @@ double Reaction::xs(const NuclideMicroXS& micro) const
 }
 
 double Reaction::collapse_rate(int64_t i_temp, span<const double> energy,
-  span<const double> flux, const vector<float>& grid) const
+  span<const double> flux, const vector<double>& grid) const
 {
   // Find index corresponding to first energy
   const auto& xs = xs_[i_temp].value;

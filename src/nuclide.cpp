@@ -364,7 +364,7 @@ void Nuclide::create_derived(
 {
   for (const auto& grid : grid_) {
     // Allocate and initialize cross section
-    xs_.push_back(tensor::zeros<float>({grid.energy.size(), 5}));
+    xs_.push_back(tensor::zeros<double>({grid.energy.size(), 5}));
   }
 
   reaction_index_.fill(C_NONE);
@@ -377,7 +377,7 @@ void Nuclide::create_derived(
     for (int t = 0; t < kTs_.size(); ++t) {
       int j = rx->xs_[t].threshold;
       int n = rx->xs_[t].value.size();
-      auto xs = tensor::Tensor<float>(
+      auto xs = tensor::Tensor<double>(
         rx->xs_[t].value.data(), rx->xs_[t].value.size());
       for (const auto& p : rx->products_) {
         if (p.particle_.is_photon()) {
@@ -497,11 +497,11 @@ void Nuclide::create_derived(
 }
 
 void Nuclide::create_ue_derived(
-  const Function1D* prompt_photons, const Function1D* delayed_photons, const vector<float>& ueg) 
+  const Function1D* prompt_photons, const Function1D* delayed_photons, const vector<double>& ueg) 
 {
   for (int t = 0; t < kTs_.size(); t++) {
     // Allocate and initialize cross section
-    xs_.push_back(tensor::zeros<float>({ueg.size(), 5}));
+    xs_.push_back(tensor::zeros<double>({ueg.size(), 5}));
   }
 
   reaction_index_.fill(C_NONE);
@@ -514,7 +514,7 @@ void Nuclide::create_ue_derived(
     for (int t = 0; t < kTs_.size(); ++t) {
       int j = rx->xs_[t].threshold;
       int n = rx->xs_[t].value.size();
-      auto xs = tensor::Tensor<float>(
+      auto xs = tensor::Tensor<double>(
         rx->xs_[t].value.data(), rx->xs_[t].value.size());
       for (const auto& p : rx->products_) {
         if (p.particle_.is_photon()) {
@@ -581,7 +581,7 @@ void Nuclide::create_ue_derived(
       const int rxn_stride = xs_[t].shape(1);
       auto fission_xs = xs_[t].data() + XS_FISSION;
       for (int i = 0; i < n; ++i) {
-        float E = ueg[i];
+        double E = ueg[i];
         xs_[t](i, XS_NU_FISSION) =
           nu(E, EmissionMode::total) * (*fission_xs);
         fission_xs += rxn_stride;

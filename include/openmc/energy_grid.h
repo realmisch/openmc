@@ -8,7 +8,7 @@
 namespace openmc {
   struct EnergyGrid {
     vector<int> grid_index;
-    vector<float> energy;
+    vector<double> energy;
   };
   namespace data {
       extern bool use_ueg;
