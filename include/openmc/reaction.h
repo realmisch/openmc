@@ -50,12 +50,12 @@ public:
   //! \param[in] grid Nuclide energy grid
   //! \return Reaction rate
   double collapse_rate(int64_t i_temp, span<const double> energy,
-    span<const double> flux, const vector<float>& grid) const;
+    span<const double> flux, const vector<double>& grid) const;
 
   //! Cross section at a single temperature
   struct TemperatureXS {
     int threshold;
-    vector<float> value;
+    vector<double> value;
   };
 
   int mt_;                           //!< ENDF MT value
