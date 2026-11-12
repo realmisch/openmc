@@ -174,7 +174,7 @@ namespace openmc {
       xs.value = vector<double>(rxn_xs.begin(), rxn_xs.end());
     }
 
-    double mem_size = (double)(ueg.size()*num_temps)*sizeof(double)*BYTES_TO_GIGABYTES;
+    double mem_size = (double)((ueg.size()*num_temps + 1)*sizeof(double) + sizeof(int))*BYTES_TO_GIGABYTES;
     return mem_size;
   }
 
@@ -215,7 +215,7 @@ namespace openmc {
       }
     }
     
-    double mem_size = (double)(ueg.size()*num_temps)*sizeof(double)*BYTES_TO_GIGABYTES; 
+    double mem_size = (double)((ueg.size()*num_temps)*sizeof(int) + sizeof(double))*BYTES_TO_GIGABYTES; 
     return mem_size;
   }
 
